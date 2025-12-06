@@ -1,35 +1,42 @@
-<main class="container mx-auto p-4 md:p-8 text-slate-200">
+<main class="container mx-auto p-4 md:p-8 text-gray-800">
   @if (loading()) {
   <div class="flex items-center justify-center min-h-screen">
-    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-pikachu-500"></div>
   </div>
   } @else if (!user()) {
   <app-login></app-login>
   } @else {
   <!-- View Switcher Tabs -->
-  <div class="mb-8 border-b border-slate-700 flex justify-between items-center">
-    <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+  <div
+    class="mb-6 md:mb-8 border-b-2 border-pokemon-pink/30 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <nav class="-mb-px flex space-x-4 md:space-x-6 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 hide-scrollbar"
+      aria-label="Tabs">
       <button (click)="setView('portfolio')"
-        class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200"
-        [class]="activeView() === 'portfolio' ? 'border-green-500 text-green-400' : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500'">
-        Meu Portfólio
+        class="whitespace-nowrap py-3 md:py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 flex-shrink-0"
+        [class]="activeView() === 'portfolio' ? 'border-pikachu-500 text-pikachu-600 font-bold' : 'border-transparent text-gray-500 hover:text-pikachu-600 hover:border-pokemon-pink'">
+        ⚡ Meu Portfólio
       </button>
       <button (click)="setView('marketAdvanced')"
-        class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200"
-        [class]="activeView() === 'marketAdvanced' ? 'border-green-500 text-green-400' : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500'">
-        🔍 Análise de Mercado
+        class="whitespace-nowrap py-3 md:py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 flex-shrink-0"
+        [class]="activeView() === 'marketAdvanced' ? 'border-pikachu-500 text-pikachu-600 font-bold' : 'border-transparent text-gray-500 hover:text-pikachu-600 hover:border-pokemon-pink'">
+        🔍 Análise
       </button>
-      <button (click)="setView('transactions')"
-        class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200"
-        [class]="activeView() === 'transactions' ? 'border-green-500 text-green-400' : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-500'">
-        📜 Histórico de Transações
+      <button (click)="setView('transactionsNew')"
+        class="whitespace-nowrap py-3 md:py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 flex-shrink-0"
+        [class]="activeView() === 'transactionsNew' ? 'border-pikachu-500 text-pikachu-600 font-bold' : 'border-transparent text-gray-500 hover:text-pikachu-600 hover:border-pokemon-pink'">
+        📊 Transações PRO ✨
+      </button>
+      <button (click)="setView('psa')"
+        class="whitespace-nowrap py-3 md:py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200 flex-shrink-0"
+        [class]="activeView() === 'psa' ? 'border-pikachu-500 text-pikachu-600 font-bold' : 'border-transparent text-gray-500 hover:text-pikachu-600 hover:border-pokemon-pink'">
+        🏆 PSA
       </button>
     </nav>
 
-    <div class="flex items-center gap-4">
-      <span class="text-sm text-slate-400 hidden md:block">{{ user()?.email }}</span>
+    <div class="flex items-center gap-4 w-full md:w-auto justify-end">
+      <span class="text-sm text-gray-600 hidden md:block">{{ user()?.email }}</span>
       <button (click)="signOut()"
-        class="text-sm text-slate-400 hover:text-white transition-colors flex items-center gap-2">
+        class="text-sm text-gray-600 hover:text-pokeball-red transition-colors flex items-center gap-2">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -42,33 +49,252 @@
   <!-- Portfolio View -->
   @if (activeView() === 'portfolio') {
   <div class="animate-fade-in">
-    <!-- Header -->
-    <header class="flex flex-wrap justify-between items-center gap-4 mb-8">
-      <h1 class="text-3xl font-bold text-white">Meu Portfólio</h1>
+    <!-- Header - Minimal -->
+    <header class="flex justify-between items-center mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-pikachu-700">⚡ Portfolio Analytics</h1>
+        <p class="text-sm text-gray-600">Análise inteligente do seu portfólio Pokemon</p>
+      </div>
       <button (click)="openModal()"
-        class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        class="flex items-center gap-2 bg-pikachu-500 hover:bg-pikachu-600 text-gray-900 font-semibold py-2 px-3 rounded-lg transition-all duration-200 text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
           <path fill-rule="evenodd"
             d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
             clip-rule="evenodd" />
         </svg>
-        Adicionar Posição
+        Adicionar
       </button>
     </header>
 
-    <!-- KPI Cards Removed -->
+    <!-- KPIs Grid -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      <!-- Total Value -->
+      <div
+        class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-4 hover:shadow-lg transition-all">
+        <p class="text-xs font-bold text-gray-500 mb-1">VALOR TOTAL</p>
+        <p class="text-2xl font-bold text-pikachu-700">
+          {{ currentValue() ? (currentValue() | currency:'BRL':'symbol':'1.0-0':'pt') : '—' }}
+        </p>
+      </div>
 
-    <!-- Chart and Table Section Removed -->
-    <!-- Positions Table -->
-    <section class="grid grid-cols-1 gap-8">
-      <div class="bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-xl p-6 shadow-lg">
+      <!-- Gain/Loss -->
+      <div
+        class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-4 hover:shadow-lg transition-all">
+        <p class="text-xs font-bold text-gray-500 mb-1">GANHO/PERDA</p>
+        <p class="text-2xl font-bold" [class.text-pokemon-green]="totalGainLoss() >= 0"
+          [class.text-pokeball-red]="totalGainLoss() < 0">
+          {{ totalGainLoss() ? (totalGainLoss() | currency:'BRL':'symbol':'1.0-0':'pt') : '—' }}
+        </p>
+      </div>
+
+      <!-- ROI -->
+      <div
+        class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-4 hover:shadow-lg transition-all">
+        <p class="text-xs font-bold text-gray-500 mb-1">ROI</p>
+        <p class="text-2xl font-bold" [class.text-pokemon-green]="roi() >= 0" [class.text-pokeball-red]="roi() < 0">
+          {{ roi() ? ((roi() >= 0 ? '+' : '') + (roi() | number:'1.1-1') + '%') : '—' }}
+        </p>
+      </div>
+
+      <!-- Best Card -->
+      <div
+        class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-4 hover:shadow-lg transition-all cursor-pointer"
+        (click)="openTopPerformer()">
+        <p class="text-xs font-bold text-gray-500 mb-1">MELHOR CARTA</p>
+        <p class="text-sm font-bold text-pokemon-green truncate" title="{{ topPerformer().name }}">
+          {{ topPerformer().name || '—' }}
+        </p>
+        <p class="text-xs" [class.text-pokemon-green]="topPerformer().gain >= 0"
+          [class.text-pokeball-red]="topPerformer().gain < 0" *ngIf="topPerformer().name">
+          {{ topPerformer().gain | currency:'BRL':'symbol':'1.0-0':'pt' }}
+        </p>
+      </div>
+
+      <!-- Worst Card -->
+      <div
+        class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-4 hover:shadow-lg transition-all cursor-pointer"
+        (click)="openWorstPerformer()">
+        <p class="text-xs font-bold text-gray-500 mb-1">PIOR CARTA</p>
+        <p class="text-sm font-bold text-pokeball-red truncate" title="{{ worstPerformer().name }}">
+          {{ worstPerformer().name || '—' }}
+        </p>
+        <p class="text-xs" [class.text-pokemon-green]="worstPerformer().loss >= 0"
+          [class.text-pokeball-red]="worstPerformer().loss < 0" *ngIf="worstPerformer().name">
+          {{ worstPerformer().loss | currency:'BRL':'symbol':'1.0-0':'pt' }}
+        </p>
+      </div>
+
+      <!-- Total Cards -->
+      <div
+        class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-4 hover:shadow-lg transition-all">
+        <p class="text-xs font-bold text-gray-500 mb-1">TOTAL CARTAS</p>
+        <p class="text-2xl font-bold text-pikachu-700">{{ totalCards() || '—' }}</p>
+      </div>
+    </div>
+
+    <!-- Card Detail Modal -->
+    @if (selectedCard()) {
+    <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
+      (click)="closeCardDetail()">
+      <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        (click)="$event.stopPropagation()">
+        <!-- Modal Header -->
+        <div class="bg-gradient-to-r from-pikachu-500 to-yellow-500 p-6 rounded-t-2xl">
+          <div class="flex justify-between items-start">
+            <div class="flex-1">
+              <h2 class="text-2xl font-bold text-gray-900">{{ selectedCard()!.name }}</h2>
+              <p class="text-sm text-gray-700">{{ selectedCard()!.code }}</p>
+            </div>
+            <button (click)="closeCardDetail()" class="text-gray-900 hover:text-gray-700 transition-colors">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Modal Content -->
+        <div class="p-6">
+          <!-- Card Image -->
+          <div class="flex justify-center mb-6">
+            <img [src]="getCardImageUrl(selectedCard()!.name)" [alt]="selectedCard()!.name"
+              class="w-48 h-auto rounded-xl shadow-lg border-4 border-pikachu-300"
+              (error)="$event.target.src='https://via.placeholder.com/200x280?text=?'" />
+          </div>
+
+          <!-- Stats Grid -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-pokemon-cream rounded-lg p-4">
+              <p class="text-xs font-bold text-gray-500 mb-1">QUANTIDADE</p>
+              <p class="text-xl font-bold text-pikachu-700">{{ selectedCard()!.quantity }}</p>
+            </div>
+
+            <div class="bg-pokemon-cream rounded-lg p-4">
+              <p class="text-xs font-bold text-gray-500 mb-1">CONDIÇÃO</p>
+              <p class="text-sm font-bold text-gray-800">{{ selectedCard()!.condition }}</p>
+              <p class="text-xs text-gray-600">{{ selectedCard()!.language }}</p>
+            </div>
+
+            <div class="bg-pokemon-cream rounded-lg p-4">
+              <p class="text-xs font-bold text-gray-500 mb-1">PREÇO COMPRA</p>
+              <p class="text-lg font-bold text-gray-800">
+                {{ selectedCard()!.purchasePrice | currency:'BRL':'symbol':'1.2-2':'pt' }}
+              </p>
+            </div>
+
+            <div class="bg-pokemon-cream rounded-lg p-4">
+              <p class="text-xs font-bold text-gray-500 mb-1">PREÇO ATUAL</p>
+              <p class="text-lg font-bold text-pikachu-700">
+                {{ selectedCard()!.currentPrice | currency:'BRL':'symbol':'1.2-2':'pt' }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Performance Card -->
+          <div class="bg-gradient-to-br from-pokemon-pink/20 to-pokemon-blue/20 rounded-xl p-6 mb-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">📊 Performance</h3>
+
+            <div class="grid md:grid-cols-3 gap-4">
+              <div>
+                <p class="text-xs font-bold text-gray-500 mb-1">TOTAL INVESTIDO</p>
+                <p class="text-xl font-bold text-gray-800">
+                  {{ selectedCard()!.purchasePrice * selectedCard()!.quantity | currency:'BRL':'symbol':'1.2-2':'pt' }}
+                </p>
+              </div>
+
+              <div>
+                <p class="text-xs font-bold text-gray-500 mb-1">VALOR ATUAL</p>
+                <p class="text-xl font-bold text-pikachu-700">
+                  {{ selectedCard()!.currentPrice * selectedCard()!.quantity | currency:'BRL':'symbol':'1.2-2':'pt' }}
+                </p>
+              </div>
+
+              <div>
+                <p class="text-xs font-bold text-gray-500 mb-1">GANHO/PERDA</p>
+                <p class="text-xl font-bold"
+                  [class.text-pokemon-green]="(selectedCard()!.currentPrice - selectedCard()!.purchasePrice) * selectedCard()!.quantity >= 0"
+                  [class.text-pokeball-red]="(selectedCard()!.currentPrice - selectedCard()!.purchasePrice) * selectedCard()!.quantity < 0">
+                  {{ (selectedCard()!.currentPrice - selectedCard()!.purchasePrice) * selectedCard()!.quantity |
+                  currency:'BRL':'symbol':'1.2-2':'pt' }}
+                </p>
+                <p class="text-sm font-semibold"
+                  [class.text-pokemon-green]="selectedCard()!.currentPrice >= selectedCard()!.purchasePrice"
+                  [class.text-pokeball-red]="selectedCard()!.currentPrice < selectedCard()!.purchasePrice">
+                  {{ selectedCard()!.purchasePrice > 0 ? ((selectedCard()!.currentPrice - selectedCard()!.purchasePrice)
+                  / selectedCard()!.purchasePrice * 100) : 0 | number:'1.1-1' }}%
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex gap-3">
+            <button (click)="closeCardDetail()"
+              class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-6 rounded-lg transition-colors">
+              Fechar
+            </button>
+            <button (click)="removePosition(selectedCard()!.id); closeCardDetail()"
+              class="bg-pokeball-red hover:bg-red-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center gap-2">
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd"
+                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                  clip-rule="evenodd" />
+              </svg>
+              Remover
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    }
+
+    <!-- Insights Section -->
+    <div class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-6 mb-8">
+      <h3 class="text-lg font-bold text-pikachu-700 mb-4">💡 Insights</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="flex items-start gap-3 p-3 bg-pokemon-cream rounded-lg">
+          <span class="text-2xl">📊</span>
+          <div>
+            <p class="font-semibold text-gray-800">Concentração de Valor</p>
+            <p class="text-sm text-gray-600">Top 5 cartas representam {{ topConcentration() }}% do valor total</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3 p-3 bg-pokemon-cream rounded-lg">
+          <span class="text-2xl">{{ totalGainLoss() >= 0 ? '🚀' : '⚠️' }}</span>
+          <div>
+            <p class="font-semibold text-gray-800">Performance Geral</p>
+            <p class="text-sm text-gray-600">
+              Seu portfólio {{ totalGainLoss() >= 0 ? 'valorizou' : 'desvalorizou' }}
+              {{ roi() | number:'1.1-1' }}% desde a compra
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Consolidated Portfolio Performance (Charts) -->
+    <app-portfolio-consolidated></app-portfolio-consolidated>
+
+    <!-- Toggle Button for Table -->
+    <div class="text-center my-8">
+      <button (click)="showTableView.set(!showTableView())"
+        class="bg-gradient-to-r from-pikachu-500 to-yellow-500 hover:from-pikachu-600 hover:to-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-lg transition-all duration-300 shadow-lg">
+        {{ showTableView() ? '📊 Voltar para Analytics' : '📋 Ver Todas as Cartas' }}
+      </button>
+    </div>
+
+    <!-- Positions Table (Collapsible) -->
+    @if (showTableView()) {
+    <section class="animate-fade-in">
+      <div class="bg-white/80 backdrop-blur-xl border-2 border-pokemon-pink/30 rounded-xl p-6 shadow-xl">
         <div class="flex flex-wrap justify-between items-center gap-4 mb-4">
-          <h2 class="text-xl font-bold text-white">Minhas Posições</h2>
+          <h2 class="text-xl font-bold text-pikachu-700">🎴 Lista Completa de Cartas</h2>
           <div class="relative">
-            <input type="text" placeholder="Pesquisar..." (input)="onSearch($event)"
-              class="bg-slate-700/50 border border-slate-600 text-white placeholder-slate-400 text-sm rounded-lg focus:ring-green-500 focus:border-green-500 block w-full pl-10 p-2.5" />
+            <input type="text" placeholder="Pesquisar carta..." (input)="onSearch($event)"
+              class="bg-pokemon-cream border-2 border-pokemon-pink/30 text-gray-800 placeholder-gray-400 text-sm rounded-lg focus:ring-pikachu-500 focus:border-pikachu-500 block w-full pl-10 p-2.5" />
             <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-              <svg class="w-5 h-5 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+              <svg class="w-5 h-5 text-pikachu-500" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd"
                   d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
                   clip-rule="evenodd"></path>
@@ -78,14 +304,13 @@
         </div>
 
         <div class="overflow-x-auto">
-          <table class="w-full text-sm text-left text-slate-300">
-            <thead class="text-xs text-slate-400 uppercase bg-slate-700/50">
+          <table class="w-full text-sm text-left text-gray-700">
+            <thead class="text-xs text-gray-600 uppercase bg-gradient-to-r from-pokemon-pink/20 to-pokemon-blue/20">
               <tr>
                 <th scope="col" class="px-6 py-3">Imagem</th>
                 <th scope="col" class="px-6 py-3">Carta</th>
                 <th scope="col" class="px-6 py-3">Condição</th>
                 <th scope="col" class="px-6 py-3 text-center">Qtd</th>
-                <th scope="col" class="px-6 py-3">Data Compra</th>
                 <th scope="col" class="px-6 py-3 text-right">Preço Compra</th>
                 <th scope="col" class="px-6 py-3 text-right">Preço Atual</th>
                 <th scope="col" class="px-6 py-3 text-right">P&L</th>
@@ -94,31 +319,33 @@
             </thead>
             <tbody>
               @for (item of filteredPortfolio(); track item.id) {
-              <tr class="border-b border-slate-700 hover:bg-slate-800/60 transition-colors duration-200">
+              <tr class="border-b border-pokemon-pink/20 hover:bg-pokemon-blue/10 transition-colors duration-200">
                 <td class="px-6 py-4">
-                  <img [src]="getCardImageUrl(item.name)" [alt]="item.name" class="w-16 h-auto rounded-md object-cover"
+                  <img [src]="getCardImageUrl(item.name)" [alt]="item.name"
+                    class="w-16 h-auto rounded-md object-cover shadow-md border-2 border-pikachu-300"
                     (error)="$event.target.src='https://via.placeholder.com/60x84?text=?'" />
                 </td>
-                <td class="px-6 py-4 font-medium text-white whitespace-nowrap">
+                <td class="px-6 py-4 font-medium text-gray-800 whitespace-nowrap">
                   {{ item.name }}
-                  <span class="block text-xs text-slate-400">{{ item.code }}</span>
+                  <span class="block text-xs text-gray-500">{{ item.code }}</span>
                 </td>
                 <td class="px-6 py-4">
-                  <span class="bg-blue-900 text-blue-300 text-xs font-medium px-2.5 py-0.5 rounded-full">{{
+                  <span
+                    class="bg-gradient-to-r from-pokemon-blue to-pokemon-lavender text-gray-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{{
                     item.condition }} / {{ item.language }}</span>
                 </td>
-                <td class="px-6 py-4 text-center">{{ item.quantity }}</td>
-                <td class="px-6 py-4">{{ item.purchaseDate | date:'dd/MM/yyyy':'':'pt' }}</td>
-                <td class="px-6 py-4 text-right">{{ item.purchasePrice | currency:'BRL':'symbol':'1.2-2':'pt' }}</td>
-                <td class="px-6 py-4 text-right font-semibold">{{ item.currentPrice |
+                <td class="px-6 py-4 text-center font-semibold text-pikachu-700">{{ item.quantity }}</td>
+                <td class="px-6 py-4 text-right text-gray-700">{{ item.purchasePrice |
+                  currency:'BRL':'symbol':'1.2-2':'pt' }}</td>
+                <td class="px-6 py-4 text-right font-semibold text-pikachu-700">{{ item.currentPrice |
                   currency:'BRL':'symbol':'1.2-2':'pt' }}</td>
                 <td class="px-6 py-4 text-right font-semibold"
-                  [class]="(item.currentPrice - item.purchasePrice) * item.quantity >= 0 ? 'text-green-400' : 'text-red-400'">
+                  [class]="(item.currentPrice - item.purchasePrice) * item.quantity >= 0 ? 'text-pokemon-green' : 'text-pokeball-red'">
                   {{ (item.currentPrice - item.purchasePrice) * item.quantity | currency:'BRL':'symbol':'1.2-2':'pt' }}
                 </td>
                 <td class="px-6 py-4 text-center">
                   <button (click)="removePosition(item.id)"
-                    class="text-red-500 hover:text-red-400 transition-colors duration-200 p-1">
+                    class="text-pokeball-red hover:text-red-600 transition-colors duration-200 p-1 hover:scale-110 transform">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd"
                         d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
@@ -129,9 +356,9 @@
               </tr>
               } @empty {
               <tr>
-                <td colspan="9" class="text-center py-12">
-                  <p class="text-slate-400">Nenhuma posição encontrada.</p>
-                  <p class="text-sm text-slate-500">Adicione uma nova posição para começar.</p>
+                <td colspan="8" class="text-center py-12">
+                  <p class="text-gray-600 text-lg">🎴 Nenhuma carta encontrada.</p>
+                  <p class="text-sm text-gray-500">Adicione uma nova posição para começar sua coleção!</p>
                 </td>
               </tr>
               }
@@ -140,16 +367,17 @@
         </div>
       </div>
     </section>
-
-    <!-- Consolidated Portfolio Performance Section -->
-    <app-portfolio-consolidated></app-portfolio-consolidated>
+    }
   </div>
   } @else if (activeView() === 'marketAdvanced') {
   <!-- Advanced Market Analysis View -->
   <app-market-analysis-advanced></app-market-analysis-advanced>
-  } @else if (activeView() === 'transactions') {
-  <!-- Transaction History View -->
-  <app-transaction-history></app-transaction-history>
+  } @else if (activeView() === 'transactionsNew') {
+  <!-- Transaction History View (PRO) -->
+  <app-transaction-history-page></app-transaction-history-page>
+  } @else if (activeView() === 'psa') {
+  <!-- PSA Price Tracking View -->
+  <app-psa-tab></app-psa-tab>
   }
 
   <!-- Add Position Modal (New Component) -->

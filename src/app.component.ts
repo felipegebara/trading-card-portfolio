@@ -3,7 +3,7 @@ import { PortfolioService } from './services/portfolio.service';
 import { CommonModule, CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { PortfolioChartComponent } from './components/portfolio-chart/portfolio-chart.component';
 import { MarketAnalysisAdvancedComponent } from './components/market-analysis-advanced/market-analysis-advanced.component';
-import { TransactionHistoryComponent } from './components/transaction-history/transaction-history.component';
+import { TransactionHistoryPageComponent } from './components/transaction-history-page/transaction-history-page.component';
 import { LoginComponent } from './components/login/login.component';
 import { FormsModule } from '@angular/forms';
 import { SupabaseService } from './services/supabase.service';
@@ -12,6 +12,7 @@ import { AddPositionModalComponent } from './components/add-position-modal/add-p
 import { supabase } from './supabaseClient';
 import { PortfolioPerformanceComponent } from './components/portfolio-performance/portfolio-performance.component';
 import { PortfolioConsolidatedComponent } from './components/portfolio-consolidated/portfolio-consolidated.component';
+import { PsaTabComponent } from './components/psa-tab/psa-tab.component';
 
 export interface PortfolioItem {
   id: number;
@@ -30,18 +31,18 @@ export interface PortfolioItem {
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   standalone: true,
-  imports: [CommonModule, FormsModule, PortfolioChartComponent, MarketAnalysisAdvancedComponent, TransactionHistoryComponent, LoginComponent, AddPositionModalComponent, PortfolioPerformanceComponent, PortfolioConsolidatedComponent, CurrencyPipe, DatePipe, DecimalPipe],
+  imports: [CommonModule, FormsModule, PortfolioChartComponent, MarketAnalysisAdvancedComponent, TransactionHistoryPageComponent, LoginComponent, AddPositionModalComponent, PortfolioPerformanceComponent, PortfolioConsolidatedComponent, PsaTabComponent, CurrencyPipe, DatePipe, DecimalPipe],
 })
 export class AppComponent implements OnInit {
-  // --- ViewChild para referenciar componentes ---
-  @ViewChild(TransactionHistoryComponent) transactionHistory?: TransactionHistoryComponent;
-
   // --- Auth State ---
   user = signal<User | null>(null);
   loading = signal(true);
 
   // --- View State Signal ---
-  activeView = signal<'portfolio' | 'marketAdvanced' | 'transactions'>('portfolio');
+  activeView = signal<'portfolio' | 'marketAdvanced' | 'transactionsNew' | 'psa'>('portfolio');
+
+  // --- Portfolio Table Visibility ---
+  showTableView = signal(false);
 
   // --- State Signals ---
   portfolio = signal<PortfolioItem[]>([]);
@@ -50,6 +51,9 @@ export class AppComponent implements OnInit {
 
   // --- Modal State (new approach) ---
   showModal = signal(false);
+
+  // --- Card Detail Modal ---
+  selectedCard = signal<PortfolioItem | null>(null);
 
   // --- Card Images Cache ---
   private cardImageCache = new Map<string, string>();
@@ -83,9 +87,68 @@ export class AppComponent implements OnInit {
     );
   });
 
+  // --- New Analytics Computed Signals ---
+  roi = computed(() => {
+    const invested = this.totalInvested();
+    if (invested === 0) return 0;
+    return (this.pnl() / invested) * 100;
+  });
+
+  totalGainLoss = computed(() => this.pnl());
+
+  totalCards = computed(() =>
+    this.portfolio().reduce((sum, item) => sum + item.quantity, 0)
+  );
+
+  topPerformer = computed(() => {
+    const items = this.portfolio();
+    if (items.length === 0) return { name: '', gain: 0 };
+
+    const sorted = [...items]
+      .map(item => ({
+        name: item.name,
+        gain: (item.currentPrice - item.purchasePrice) * item.quantity
+      }))
+      .sort((a, b) => b.gain - a.gain);
+
+    return sorted[0] || { name: '', gain: 0 };
+  });
+
+  worstPerformer = computed(() => {
+    const items = this.portfolio();
+    if (items.length === 0) return { name: '', loss: 0 };
+
+    const sorted = [...items]
+      .map(item => ({
+        name: item.name,
+        loss: (item.currentPrice - item.purchasePrice) * item.quantity
+      }))
+      .sort((a, b) => a.loss - b.loss);
+
+    return sorted[0] || { name: '', loss: 0 };
+  });
+
+  topConcentration = computed(() => {
+    const items = this.portfolio();
+    if (items.length === 0) return 0;
+
+    const sorted = [...items]
+      .map(item => ({
+        value: item.currentPrice * item.quantity
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+
+    const top5Value = sorted.reduce((sum, item) => sum + item.value, 0);
+    const total = this.currentValue();
+
+    return total > 0 ? Math.round((top5Value / total) * 100) : 0;
+  });
+
   constructor(
     private supabaseService: SupabaseService,
-    private cd: ChangeDetectorRef
+    private cd: ChangeDetectorRef,
+    private portfolioService: PortfolioService
   ) {
     effect(() => {
       if (this.user()) {
@@ -93,17 +156,7 @@ export class AppComponent implements OnInit {
       }
     });
 
-    // Refresh transaction history when switching to it
-    effect(() => {
-      const view = this.activeView();
-      if (view === 'transactions') {
-        // Use setTimeout to ensure ViewChild is initialized
-        setTimeout(() => {
-          console.log('🔄 [AppComponent] Trocou para aba de transações, refresh automático');
-          this.transactionHistory?.refresh();
-        }, 0);
-      }
-    });
+
   }
 
   async ngOnInit() {
@@ -131,9 +184,10 @@ export class AppComponent implements OnInit {
       // Load conversion factors once
       const conversionFactors = await this.loadConversionFactors();
 
-      // Process each card and fetch its current price
       const portfolioItems: PortfolioItem[] = await Promise.all(
         data.map(async (card: any) => {
+          console.log(`📦 [Portfolio] Processando carta: ${card.carta} (ID: ${card.id})`);
+
           const currentPrice = await this.getCurrentPrice(
             card.carta,
             card.idioma || 'PT-BR',
@@ -144,7 +198,7 @@ export class AppComponent implements OnInit {
           return {
             id: card.id,
             name: card.carta,
-            code: '(117/112)- MEG',
+            code: '(117/112)- MEG', // TODO: Fetch real code if available
             condition: card.estado || 'NM',
             language: card.idioma || 'PT-BR',
             quantity: card.qtd || 1,
@@ -155,7 +209,17 @@ export class AppComponent implements OnInit {
         })
       );
 
+      console.log('✅ [Portfolio] Itens carregados:', portfolioItems);
       this.portfolio.set(portfolioItems);
+
+      // Log computed metrics for debugging
+      setTimeout(() => {
+        console.log('📊 [KPIs] Total Investido:', this.totalInvested());
+        console.log('📊 [KPIs] Valor Atual:', this.currentValue());
+        console.log('📊 [KPIs] P&L:', this.pnl());
+        console.log('📊 [KPIs] Top Performer:', this.topPerformer());
+      }, 100);
+
     } catch (error) {
       console.error('Error loading portfolio:', error);
     }
@@ -295,7 +359,7 @@ export class AppComponent implements OnInit {
   }
 
   // --- Methods ---
-  setView(view: 'portfolio' | 'marketAdvanced' | 'transactions') {
+  setView(view: 'portfolio' | 'marketAdvanced' | 'transactionsNew' | 'psa') {
     this.activeView.set(view);
   }
 
@@ -307,8 +371,31 @@ export class AppComponent implements OnInit {
     this.showModal.set(false);
   }
 
+  openCardDetail(card: PortfolioItem) {
+    this.selectedCard.set(card);
+  }
+
+  closeCardDetail() {
+    this.selectedCard.set(null);
+  }
+
+  openTopPerformer() {
+    const top = this.topPerformer();
+    if (!top.name) return;
+    const card = this.portfolio().find(c => c.name === top.name);
+    if (card) this.openCardDetail(card);
+  }
+
+  openWorstPerformer() {
+    const worst = this.worstPerformer();
+    if (!worst.name) return;
+    const card = this.portfolio().find(c => c.name === worst.name);
+    if (card) this.openCardDetail(card);
+  }
+
   async onSaved() {
     await this.loadPortfolio();
+    this.portfolioService.notifyUpdate();
     this.closeModal();
   }
 
@@ -318,6 +405,7 @@ export class AppComponent implements OnInit {
     try {
       await this.supabaseService.removePortfolioCard(id);
       await this.loadPortfolio();
+      this.portfolioService.notifyUpdate();
     } catch (error) {
       console.error('Error removing position:', error);
       alert('Failed to remove position from database');

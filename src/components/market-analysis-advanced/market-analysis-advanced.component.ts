@@ -1,752 +1,865 @@
-import { Component, OnInit, signal, computed, AfterViewInit, ViewChild, ElementRef, effect } from '@angular/core';
+import { Component, OnInit, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { supabase } from '../../supabaseClient';
-import {
-  MarketOffer,
-  MarketKPIs,
-  FilterState,
-  PriceEvolution,
-  DistributionItem
-} from './market-analysis.types';
-import { MarketAnalysisService } from './market-analysis.service';
-import { ChartRenderer } from './chart-renderer';
+import { Chart } from 'chart.js/auto';
+
+// Interfaces
+interface CardMetadata {
+  slug: string;
+  name: string;
+  image_url?: string;
+  set_name?: string;
+  set_num?: string;
+}
+
+interface MarketOffer {
+  id?: string;
+  date: Date;
+  price: number;
+  source: 'liga' | 'myp';
+  condition?: string;
+  language?: string;
+  seller?: string;
+}
+
+interface DailyStats {
+  date: string; // YYYY-MM-DD
+  minPrice: number;
+  avgPrice: number;
+  volume: number;
+  movingAvg7d?: number;
+}
+
+interface KPI {
+  currentMinPrice: number;
+  avgPrice7d: number;
+  variation30d: number;
+  liquidity: number; // offers/day
+  volatility: number;
+}
+
+// Helper de normalização
+function normalize(str: string | null | undefined): string {
+  return (str ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .toLowerCase()
+    .trim();
+}
 
 @Component({
   selector: 'app-market-analysis-advanced',
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="market-container">
-      <header class="header">
-        <h1 class="title">Análise de Mercado</h1>
-        <p class="subtitle">Explore preços, liquidez e distribuição das ofertas</p>
+    <div class="dashboard-container">
+      <!-- Header / Search -->
+      <header class="dashboard-header">
+        <div class="search-section">
+          <div class="search-wrapper">
+            <span class="search-icon">🔍</span>
+            <input
+              type="text"
+              [ngModel]="searchTerm()"
+              (ngModelChange)="searchTerm.set($event)"
+              class="search-input"
+              placeholder="Buscar carta (ex: Charizard)..."
+            />
+            
+            @if (showDropdown() && filteredCards().length > 0) {
+              <div class="search-results">
+                @for (card of filteredCards().slice(0, 50); track card.slug) {
+                  <div class="search-item" (click)="selectCard(card)">
+                    {{ card.card_name }}
+                  </div>
+                }
+              </div>
+            }
+            @if (showDropdown() && filteredCards().length === 0 && searchTerm().length > 2) {
+               <div class="search-results">
+                  <div class="search-item no-results">
+                     Nenhuma carta encontrada...
+                  </div>
+               </div>
+            }
+          </div>
+        </div>
       </header>
 
-      <!-- Top Row: Filters + Card -->
-      <div class="top-row">
-        <!-- Filters Column -->
-        <div class="filters-column">
-          <div class="filters-card">
-            <div class="filter-group full">
-              <label>Carta</label>
-              <select [ngModel]="selectedCard()" (ngModelChange)="selectedCard.set($event); onFilterChange()" class="filter-select">
-                <option value="">Selecione uma carta...</option>
-                <option *ngFor="let card of cardNames()" [value]="card">{{ card }}</option>
-              </select>
-            </div>
-            <div class="filter-row">
-              <div class="filter-group">
-                <label>Idioma</label>
-                <select [ngModel]="selectedLanguage()" (ngModelChange)="selectedLanguage.set($event); onFilterChange()" class="filter-select">
-                  <option value="">Todas</option>
-                  <option value="PT-BR">PT-BR</option>
-                  <option value="ING">ING</option>
-                  <option value="JPN">JPN</option>
-                </select>
-              </div>
-              <div class="filter-group">
-                <label>Condição</label>
-                <select [ngModel]="selectedCondition()" (ngModelChange)="selectedCondition.set($event); onFilterChange()" class="filter-select">
-                  <option value="">Todas</option>
-                  <option value="NM">NM</option>
-                  <option value="SP">SP</option>
-                  <option value="MP">MP</option>
-                  <option value="HP">HP</option>
-                </select>
-              </div>
-              <div class="filter-group">
-                <label>Período</label>
-                <select [ngModel]="selectedPeriod()" (ngModelChange)="selectedPeriod.set($event); onFilterChange()" class="filter-select">
-                  <option value="7">Últimos 7 dias</option>
-                  <option value="30">Últimos 30 dias</option>
-                  <option value="90">Últimos 90 dias</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div *ngIf="loading()" class="loading"><div class="spinner"></div><p>Carregando...</p></div>
-          <div *ngIf="!loading() && !selectedCard()" class="empty-state"><p>Selecione uma carta para análise</p></div>
+      @if (loading()) {
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Carregando dados do mercado...</p>
         </div>
+      }
 
-        <!-- Card Preview Column -->
-        <div class="card-column" *ngIf="selectedCard()">
-          <div class="card-preview">
-            <img 
-              [src]="cardImageUrl() || 'https://images.pokemontcg.io/sv3/187_hires.png'" 
-              [alt]="selectedCard()" 
-              class="card-image" 
-              (error)="cardImageUrl.set(null)"
-            />
-            <h3 class="card-name">{{ selectedCard() }}</h3>
-            <p class="card-rarity" *ngIf="!cardImageUrl()">Imagem não disponível</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Bottom Content: Charts & Tables -->
-      <div class="bottom-content" *ngIf="!loading() && selectedCard() && filteredOffers().length > 0">
-        <!-- Price Evolution -->
-        <div class="section-card">
-          <h3 class="section-title">Evolução de Preços</h3>
-          <div class="kpis-row">
-            <div class="kpi-item">
-              <div class="kpi-icon">💰</div>
-              <div class="kpi-content">
-                <p class="kpi-label">PREÇO MÉDIO</p>
-                <p class="kpi-value green">R$ {{ formatPrice(kpis().avgPrice) }}</p>
+      @if (!loading() && selectedMetadata()) {
+        <div class="main-content">
+          <!-- Top Section: Card Info + KPIs -->
+          <div class="top-section">
+            <!-- Card Image & Info -->
+            <div class="card-profile section-card">
+              <div class="card-image-wrapper">
+                <img [src]="selectedMetadata()?.image_url || 'assets/placeholder-card.png'" 
+                     alt="{{ selectedMetadata()?.name }}" 
+                     class="card-image"
+                     (error)="handleImageError($event)">
               </div>
-            </div>
-            <div class="kpi-item">
-              <div class="kpi-icon">💵</div>
-              <div class="kpi-content">
-                <p class="kpi-label">PREÇO MÍNIMO</p>
-                <p class="kpi-value green">R$ {{ formatPrice(kpis().minPrice) }}</p>
-              </div>
-            </div>
-            <div class="kpi-item">
-              <div class="kpi-icon">📊</div>
-              <div class="kpi-content">
-                <p class="kpi-label">DISPERSÃO</p>
-                <p class="kpi-value">{{ kpis().dispersion.toFixed(1) }} %</p>
-              </div>
-            </div>
-
-            <div class="kpi-item">
-              <div class="kpi-icon">📦</div>
-              <div class="kpi-content">
-                <p class="kpi-label">VOLUME DISPONÍVEL</p>
-                <p class="kpi-value">{{ kpis().totalVolume }}</p>
-              </div>
-            </div>
-            <div class="kpi-item">
-              <div class="kpi-icon">🆕</div>
-              <div class="kpi-content">
-                <p class="kpi-label">NOVAS ENTRADAS</p>
-                <p class="kpi-value">{{ kpis().newListings }}</p>
-              </div>
-            </div>
-          </div>
-          <div #priceChart class="chart-container"></div>
-        </div>
-
-        <!-- Distributions -->
-        <div class="distributions-row">
-          <div class="section-card half">
-            <h3 class="section-title">Distribuição por Condição</h3>
-            <div class="dist-list">
-              <div *ngFor="let item of conditionDistribution()" class="dist-item">
-                <div class="dist-bar" [style.width.%]="item.percentage" [class]="'condition-' + item.name">
-                  <span class="dist-label">{{ item.name }} ({{ item.name === 'NM' ? 'Near Mint' : item.name === 'SP' ? 'Slightly Played' : item.name === 'HP' ? 'Heavily Played' : 'Moderately Played' }})</span>
+              <div class="card-details">
+                <h1>{{ selectedMetadata()?.name }}</h1>
+                <div class="badges">
+                  <span class="badge set">{{ selectedMetadata()?.set_name || 'Coleção Desconhecida' }}</span>
+                  <span class="badge num">#{{ selectedMetadata()?.set_num || '???' }}</span>
                 </div>
-                <span class="dist-percent">{{ item.percentage.toFixed(1) }}%</span>
               </div>
             </div>
-          </div>
 
-          <div class="section-card half">
-            <h3 class="section-title">Distribuição por Idioma</h3>
-            <div class="dist-list">
-              <div *ngFor="let item of languageDistribution()" class="dist-item">
-                <div class="dist-bar lang" [style.width.%]="item.percentage">
-                  <span class="dist-label">{{ item.name }}</span>
+            <!-- KPIs Grid -->
+            <div class="kpi-grid">
+              <div class="kpi-item">
+                <div class="kpi-header">
+                  <span class="kpi-icon">🏷️</span>
+                  <span class="kpi-label">Preço Mínimo</span>
                 </div>
-                <span class="dist-percent">{{ item.percentage.toFixed(0) }}%</span>
+                <span class="kpi-value">R$ {{ kpis()?.currentMinPrice | number:'1.2-2' }}</span>
+              </div>
+              
+              <div class="kpi-item">
+                <div class="kpi-header">
+                  <span class="kpi-icon">📈</span>
+                  <span class="kpi-label">Média (7 dias)</span>
+                </div>
+                <span class="kpi-value">R$ {{ kpis()?.avgPrice7d | number:'1.2-2' }}</span>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-header">
+                  <span class="kpi-icon">📊</span>
+                  <span class="kpi-label">Variação (30d)</span>
+                </div>
+                <span class="kpi-value" [class.positive]="(kpis()?.variation30d || 0) >= 0" [class.negative]="(kpis()?.variation30d || 0) < 0">
+                  {{ kpis()?.variation30d | number:'1.1-1' }}%
+                </span>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-header">
+                  <span class="kpi-icon">💧</span>
+                  <span class="kpi-label">Liquidez</span>
+                </div>
+                <span class="kpi-value">{{ kpis()?.liquidity | number:'1.1-1' }} <small>/dia</small></span>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-header">
+                  <span class="kpi-icon">⚡</span>
+                  <span class="kpi-label">Volatilidade</span>
+                </div>
+                <span class="kpi-value">{{ kpis()?.volatility | number:'1.1-1' }}%</span>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Offers Table -->
-        <div class="section-card">
-          <div class="table-header">
-            <h3 class="section-title">Ofertas do Último Dia ({{ latestDate() }})</h3>
-            <button class="export-btn" (click)="exportCSV()">📥 Exportar CSV</button>
+          <!-- Charts Section -->
+          <div class="charts-grid">
+            <!-- Main Price Chart -->
+            <div class="chart-card main-chart section-card">
+              <h3 class="section-title">📉 Histórico de Preço & Tendência</h3>
+              <div class="chart-container">
+                <canvas id="priceChart"></canvas>
+              </div>
+            </div>
+
+            <!-- Volume Chart -->
+            <div class="chart-card volume-chart section-card">
+              <h3 class="section-title">📊 Volume de Ofertas</h3>
+              <div class="chart-container">
+                <canvas id="volumeChart"></canvas>
+              </div>
+            </div>
           </div>
-          <div class="table-wrapper">
-            <table class="offers-table">
-              <thead>
-                <tr>
-                  <th>PREÇO</th>
-                  <th>IDIOMA</th>
-                  <th>CONDIÇÃO</th>
-                  <th>QUANTIDADE</th>
-                  <th>VENDEDOR</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let offer of latestDayOffers().slice(0, 10)">
-                  <td class="price-cell">R$ {{ formatPrice(offer.valor) }}</td>
-                  <td><span class="lang-badge">{{ offer.idioma }}</span></td>
-                  <td><span class="condition-badge" [class]="'condition-' + normalizeCondition(offer.estado)">{{ normalizeCondition(offer.estado) }}</span></td>
-                  <td>{{ offer.qtd }}</td>
-                  <td>{{ offer.vendedor }}</td>
-                </tr>
-              </tbody>
-            </table>
+
+          <!-- Seller Flow Analysis -->
+          <div class="analysis-section">
+            <div class="analysis-card section-card">
+              <h3 class="section-title">🔄 Fluxo de Vendedores (Hoje)</h3>
+              <div class="flow-stats">
+                <div class="flow-item in">
+                  <span class="flow-count">+{{ sellerFlow()?.newSellers?.length || 0 }}</span>
+                  <span class="flow-label">Novas Entradas</span>
+                </div>
+                <div class="flow-divider"></div>
+                <div class="flow-item out">
+                  <span class="flow-count">-{{ sellerFlow()?.exitedSellers?.length || 0 }}</span>
+                  <span class="flow-label">Saídas</span>
+                </div>
+              </div>
+              @if (sellerFlow()?.newSellers?.length) {
+                <div class="seller-list">
+                  <p><strong>Entraram:</strong> {{ getSellerNames(sellerFlow()?.newSellers) }}</p>
+                </div>
+              }
+            </div>
+
+            <div class="analysis-card section-card">
+              <h3 class="section-title">💡 Insights</h3>
+              <ul class="insights-list">
+                @for (insight of insights(); track $index) {
+                  <li>{{ insight }}</li>
+                }
+              </ul>
+            </div>
           </div>
+
+          <!-- Detailed Offers Toggle -->
+          <div class="details-section">
+            <button class="btn-toggle" (click)="toggleDetails()">
+              {{ showDetails() ? 'Ocultar Ofertas Detalhadas' : 'Ver Ofertas Detalhadas' }}
+            </button>
+            
+            @if (showDetails()) {
+              <div class="table-wrapper section-card">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Vendedor</th>
+                      <th>Preço</th>
+                      <th>Condição</th>
+                      <th>Fonte</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (offer of sortedOffers().slice(0, 50); track $index) {
+                      <tr>
+                        <td>{{ offer.date | date:'dd/MM/yyyy' }}</td>
+                        <td>{{ offer.seller || 'N/A' }}</td>
+                        <td><strong>R$ {{ offer.price | number:'1.2-2' }}</strong></td>
+                        <td>{{ offer.condition || '-' }}</td>
+                        <td>
+                          <span class="source-badge" [class.liga]="offer.source === 'liga'" [class.myp]="offer.source === 'myp'">
+                            {{ offer.source | uppercase }}
+                          </span>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
+
         </div>
-      </div>
+      }
+
+      @if (!loading() && !selectedMetadata() && searchTerm()) {
+        <div class="empty-state">
+          <p>Selecione uma carta para ver a análise.</p>
+        </div>
+      }
     </div>
   `,
   styles: [`
-    .market-container{background:#0a0e1a;min-height:100vh;padding:24px;color:#fff;max-width:1600px;margin:0 auto}
-    
-    .header{margin-bottom:32px}
-    .title{font-size:32px;font-weight:700;color:#22c55e;margin:0 0 8px 0;letter-spacing:-0.5px}
-    .subtitle{font-size:14px;color:#94a3b8;margin:0}
-    
-    .top-row{display:grid;grid-template-columns:1fr 400px;gap:32px;margin-bottom:32px}
-    .filters-column{display:flex;flex-direction:column;gap:24px}
-    .card-column{display:flex;flex-direction:column;gap:24px}
-    
-    .filters-card{background:#0f172a;border:1px solid #1e293b;border-radius:24px;padding:40px;height:100%;display:flex;flex-direction:column;justify-content:center;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06)}
-    .filter-group{display:flex;flex-direction:column;gap:10px}
-    .filter-group.full{margin-bottom:32px}
-    .filter-group label{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-left:4px}
-    
-    .filter-select{
-      width:100%;
-      background-color:#1e293b;
-      border:1px solid #334155;
-      border-radius:12px;
-      padding:16px 20px;
-      color:#f8fafc;
-      font-size:15px;
-      font-weight:500;
-      appearance:none;
-      cursor:pointer;
-      transition:all 0.2s ease;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 20px center;
-      background-size: 20px;
-      padding-right: 50px;
+    :host {
+      display: block;
+      background: #f8fafc;
+      min-height: 100vh;
+      font-family: 'Inter', sans-serif;
+      color: #1e293b;
     }
-    .filter-select:hover{border-color:#475569;background-color:#253045}
-    .filter-select:focus{border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,0.15);outline:none}
+
+    .dashboard-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* Cards & Containers */
+    .section-card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      border: 1px solid #f1f5f9;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #64748b;
+      margin: 0 0 20px 0;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Header & Search */
+    .dashboard-header {
+      margin-bottom: 40px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .search-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 500px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 14px 20px 14px 48px;
+      border: 1px solid #e2e8f0;
+      border-radius: 99px; /* Pill shape */
+      font-size: 16px;
+      background: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+      transition: all 0.2s;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 18px;
+      color: #94a3b8;
+    }
+
+    .search-results {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      margin-top: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+      z-index: 50;
+    }
+
+    .search-item {
+      padding: 12px 20px;
+      cursor: pointer;
+      border-bottom: 1px solid #f8fafc;
+      transition: background 0.1s;
+      font-size: 14px;
+    }
+
+    .search-item:hover { background: #f1f5f9; }
+    .search-item.no-results { color: #94a3b8; font-style: italic; cursor: default; }
+
+    /* Top Section */
+    .top-section {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card-profile {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card-image-wrapper {
+      margin-bottom: 16px;
+      height: 260px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card-image {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 8px 16px rgba(0,0,0,0.15));
+      transition: transform 0.3s;
+    }
     
-    .filter-row{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+    .card-image:hover { transform: scale(1.02); }
+
+    .card-details h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0 0 12px 0;
+      line-height: 1.4;
+    }
+
+    .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .badge.set { background: #eff6ff; color: #3b82f6; border: 1px solid #dbeafe; }
+    .badge.num { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      align-content: start;
+    }
+
+    .kpi-item {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+      transition: all 0.2s;
+    }
+
+    .kpi-item:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .kpi-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .kpi-icon { font-size: 20px; }
+    .kpi-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; }
+
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #0f172a;
+    }
     
-    .card-preview{background:#0f172a;border:1px solid #1e293b;border-radius:24px;padding:24px;text-align:center;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);height:100%;display:flex;flex-direction:column;justify-content:center}
-    .card-image{width:100%;border-radius:12px;margin-bottom:16px;max-height:480px;object-fit:contain;transition:transform 0.3s ease}
-    .card-image:hover{transform:scale(1.02)}
-    .card-name{font-size:18px;font-weight:700;color:#f1f5f9;margin:0 0 4px 0}
-    .card-rarity{font-size:13px;color:#64748b;font-weight:500}
+    .kpi-value small { font-size: 14px; color: #94a3b8; font-weight: 500; }
+    .kpi-value.positive { color: #10b981; }
+    .kpi-value.negative { color: #ef4444; }
+
+    /* Charts */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .chart-container { position: relative; height: 320px; width: 100%; }
+
+    /* Analysis */
+    .analysis-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    .flow-stats {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+      padding: 20px 0;
+    }
+
+    .flow-item { text-align: center; }
+    .flow-count { display: block; font-size: 36px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .flow-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; }
+    .flow-item.in .flow-count { color: #10b981; }
+    .flow-item.out .flow-count { color: #ef4444; }
     
-    .dispersion-card{background:#0f172a;border:1px solid #1e293b;border-radius:20px;padding:24px;display:flex;align-items:center;gap:16px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1)}
-    .disp-icon{font-size:36px;background:rgba(34,197,94,0.1);width:64px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:16px}
-    .disp-content{flex:1}
-    .disp-label{font-size:11px;color:#64748b;margin:0 0 4px 0;font-weight:700;letter-spacing:1px;text-transform:uppercase}
-    .disp-value{font-size:28px;font-weight:800;color:#22c55e;margin:0;letter-spacing:-1px}
-    
-    .bottom-content{display:flex;flex-direction:column;gap:32px}
-    
-    .section-card{background:#0f172a;border:1px solid #1e293b;border-radius:20px;padding:32px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1)}
-    .section-card.half{flex:1}
-    .section-title{font-size:15px;font-weight:700;color:#e2e8f0;margin:0 0 24px 0;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:8px}
-    .section-title::before{content:'';display:block;width:4px;height:16px;background:#22c55e;border-radius:2px}
-    
-    .kpis-row{display:grid;grid-template-columns:repeat(5,1fr);gap:32px;margin-bottom:32px}
-    .kpi-item{display:flex;align-items:center;gap:20px;background:#162032;padding:20px;border-radius:16px;border:1px solid #1e293b}
-    .kpi-icon{font-size:32px}
-    .kpi-content{flex:1}
-    .kpi-label{font-size:11px;color:#64748b;margin:0 0 4px 0;font-weight:700;letter-spacing:1px}
-    .kpi-value{font-size:28px;font-weight:700;margin:0;letter-spacing:-0.5px}
-    .kpi-value.green{color:#22c55e}
-    
-    .chart-container{height:280px;background:#0a0e1a;border-radius:12px;padding:20px;border:1px solid #1e293b}
-    
-    .distributions-row{display:grid;grid-template-columns:repeat(2,1fr);gap:32px}
-    .dist-list{display:flex;flex-direction:column;gap:16px}
-    .dist-item{display:flex;align-items:center;gap:16px}
-    .dist-bar{height:40px;border-radius:8px;display:flex;align-items:center;padding:0 16px;min-width:100px;transition:width 0.5s cubic-bezier(0.4,0,0.2,1)}
-    .dist-bar.condition-NM{background:linear-gradient(90deg, #16a34a 0%, #22c55e 100%)}
-    .dist-bar.condition-SP{background:linear-gradient(90deg, #ca8a04 0%, #eab308 100%)}
-    .dist-bar.condition-MP{background:linear-gradient(90deg, #ea580c 0%, #f97316 100%)}
-    .dist-bar.condition-HP{background:linear-gradient(90deg, #dc2626 0%, #ef4444 100%)}
-    .dist-bar.lang{background:linear-gradient(90deg, #2563eb 0%, #3b82f6 100%)}
-    .dist-label{font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,0.3)}
-    .dist-percent{font-size:14px;font-weight:600;color:#94a3b8;min-width:50px;text-align:right}
-    
-    .table-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
-    .export-btn{background:#3b82f6;border:none;border-radius:8px;padding:10px 20px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:8px}
-    .export-btn:hover{background:#2563eb;transform:translateY(-1px)}
-    
-    .table-wrapper{overflow-x:auto;border-radius:12px;border:1px solid #1e293b}
-    .offers-table{width:100%;border-collapse:collapse}
-    .offers-table thead{background:#162032}
-    .offers-table th{padding:16px 20px;text-align:left;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #1e293b}
-    .offers-table td{padding:16px 20px;font-size:14px;color:#e2e8f0;border-bottom:1px solid #1e293b;font-weight:500}
-    .offers-table tbody tr:hover{background:#162032}
-    .price-cell{color:#22c55e;font-weight:700;font-family:'Roboto Mono', monospace}
-    .lang-badge{background:rgba(34,197,94,0.1);color:#22c55e;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;border:1px solid rgba(34,197,94,0.2)}
-    .condition-badge{padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700}
-    .condition-badge.condition-NM{background:rgba(34,197,94,0.1);color:#22c55e;border:1px solid rgba(34,197,94,0.2)}
-    .condition-badge.condition-SP{background:rgba(234,179,8,0.1);color:#eab308;border:1px solid rgba(234,179,8,0.2)}
-    .condition-badge.condition-MP{background:rgba(249,115,22,0.1);color:#f97316;border:1px solid rgba(249,115,22,0.2)}
-    .condition-badge.condition-HP{background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.2)}
-    
-    .loading{display:flex;flex-direction:column;align-items:center;padding:80px 20px;color:#64748b}
-    .spinner{width:48px;height:48px;border:4px solid #1e293b;border-top-color:#22c55e;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:16px}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    .empty-state{text-align:center;padding:80px 20px;color:#64748b;font-size:16px;font-weight:500}
-    
-    @media (max-width: 1024px){
-      .top-row{grid-template-columns:1fr}
-      .card-column{display:none}
-      .distributions-row{grid-template-columns:1fr}
-      .filter-row{grid-template-columns:1fr}
+    .flow-divider { width: 1px; height: 40px; background: #e2e8f0; }
+
+    .insights-list { list-style: none; padding: 0; margin: 0; }
+    .insights-list li {
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 14px;
+      color: #334155;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      line-height: 1.5;
+    }
+    .insights-list li:last-child { border-bottom: none; }
+
+    /* Table */
+    .details-section { text-align: center; }
+    .btn-toggle {
+      background: white;
+      border: 1px solid #e2e8f0;
+      padding: 10px 24px;
+      border-radius: 99px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #64748b;
+      cursor: pointer;
+      margin-bottom: 24px;
+      transition: all 0.2s;
+    }
+    .btn-toggle:hover { background: #f8fafc; color: #0f172a; border-color: #cbd5e1; }
+
+    .table-wrapper { overflow-x: auto; border-radius: 12px; border: 1px solid #e2e8f0; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f8fafc; padding: 14px 20px; text-align: left; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 14px 20px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #334155; }
+    tr:hover td { background: #f8fafc; }
+
+    .source-badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .source-badge.liga { background: #e0f2fe; color: #0284c7; }
+    .source-badge.myp { background: #f0fdf4; color: #16a34a; }
+
+    @media (max-width: 1024px) {
+      .top-section, .charts-grid, .analysis-section { grid-template-columns: 1fr; }
+      .card-image-wrapper { height: 240px; }
     }
   `]
 })
-export class MarketAnalysisAdvancedComponent implements OnInit, AfterViewInit {
-  @ViewChild('priceChart') priceChartRef!: ElementRef;
+export class MarketAnalysisAdvancedComponent implements OnInit {
+  // Signals
+  loading = signal(false);
+  searchTerm = signal('');
 
-  // State
-  loading = signal(true);
-  allOffers = signal<MarketOffer[]>([]);
-  cardNames = signal<string[]>([]);
-  recentFilters = signal<FilterState[]>([]);
-  quickFilter = signal('');
-  sortColumn = signal('score');
-  sortDirection = signal<'asc' | 'desc'>('desc');
+  // Data State
+  allCards = signal<Array<{ slug: string, card_name: string }>>([]);
+  selectedMetadata = signal<CardMetadata | null>(null);
+  rawOffers = signal<MarketOffer[]>([]);
 
-  // Filters
-  selectedCard = signal('');
-  selectedLanguage = signal('');
-  selectedCondition = signal('');
-  selectedPeriod = signal('30');
+  // Computed
+  filteredCards = computed(() => {
+    const term = normalize(this.searchTerm());
+    const cards = this.allCards();
 
-  // Card image
-  cardImageUrl = signal<string | null>(null);
+    if (!term || term.length < 2) return [];
 
-  // Expose Math for template
-  Math = Math;
-
-  // Computed: Filtered offers
-  filteredOffers = computed(() => {
-    let offers = this.allOffers().filter(o => o.carta === this.selectedCard());
-
-    if (this.selectedLanguage()) {
-      offers = offers.filter(o => o.idioma === this.selectedLanguage());
-    }
-
-    if (this.selectedCondition()) {
-      offers = offers.filter(o =>
-        MarketAnalysisService.normalizeCondition(o.estado) === this.selectedCondition()
-      );
-    }
-
-    if (this.selectedPeriod() !== 'all') {
-      const days = parseInt(this.selectedPeriod());
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - days);
-      offers = offers.filter(o => new Date(o.data_coleta) >= cutoffDate);
-    }
-
-    return offers.sort((a, b) =>
-      new Date(b.data_coleta).getTime() - new Date(a.data_coleta).getTime()
-    );
+    return cards.filter(c => normalize(c.card_name).includes(term)).slice(0, 50);
   });
 
-  // Computed: Displayed offers with filters and sorting
-  displayedOffers = computed(() => {
-    let offers = this.filteredOffers();
+  showDropdown = computed(() => this.searchTerm().length >= 2);
 
-    // Quick filters
-    if (this.quickFilter() === 'top') {
-      offers = offers.filter(o =>
-        MarketAnalysisService.calculateOpportunityScore(o, this.kpis().avgPrice).score >= 80
-      );
-    } else if (this.quickFilter() === 'nm') {
-      offers = offers.filter(o =>
-        MarketAnalysisService.normalizeCondition(o.estado) === 'NM'
-      );
-    } else if (this.quickFilter() === 'cheap') {
-      const avg = this.kpis().avgPrice;
-      offers = offers.filter(o => o.valor < avg * 0.8);
-    }
-
-    // Sorting
-    const sorted = [...offers].sort((a, b) => {
-      if (this.sortColumn() === 'score') {
-        const scoreA = MarketAnalysisService.calculateOpportunityScore(a, this.kpis().avgPrice).score;
-        const scoreB = MarketAnalysisService.calculateOpportunityScore(b, this.kpis().avgPrice).score;
-        return this.sortDirection() === 'desc' ? scoreB - scoreA : scoreA - scoreB;
-      } else if (this.sortColumn() === 'valor') {
-        return this.sortDirection() === 'desc' ? b.valor - a.valor : a.valor - b.valor;
-      }
-      return 0;
-    });
-
-    return sorted.slice(0, 20);
+  sortedOffers = computed(() => {
+    return [...this.rawOffers()].sort((a, b) => b.date.getTime() - a.date.getTime());
   });
 
-  // Computed: KPIs
-  kpis = computed((): MarketKPIs => {
-    const offers = this.filteredOffers();
-    if (offers.length === 0) {
-      return {
-        minPrice: 0,
-        avgPrice: 0,
-        totalOffers: 0,
-        dispersion: 0,
-        minPriceTrend: 0,
-        avgPriceTrend: 0,
-        liquidityLabel: 'N/A',
-        offersPerDay: 0,
-        totalVolume: 0,
-        newListings: 0
-      };
-    }
+  kpis = computed(() => this.calculateKPIs(this.rawOffers()));
+  dailyStats = computed(() => this.processDailyStats(this.rawOffers()));
+  sellerFlow = computed(() => this.analyzeSellerFlow(this.rawOffers()));
 
-    const prices = offers.map(o => o.valor);
-    const minPrice = Math.min(...prices);
-    const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const maxPrice = Math.max(...prices);
-    const dispersion = avgPrice > 0 ? ((maxPrice - minPrice) / avgPrice * 100) : 0;
+  insights = computed(() => {
+    const kpi = this.kpis();
+    const flow = this.sellerFlow();
+    const list: string[] = [];
 
-    // Calculate trends (simplified - could be enhanced with historical data)
-    const minPriceTrend = Math.random() * 20 - 10;
-    const avgPriceTrend = Math.random() * 20 - 10;
+    if (kpi.variation30d > 10) list.push(`🚀 Forte tendência de alta: +${kpi.variation30d.toFixed(1)}% em 30 dias.`);
+    if (kpi.variation30d < -10) list.push(`🔻 Preço em queda: ${kpi.variation30d.toFixed(1)}% em 30 dias.`);
+    if (flow.newSellers.length > 2) list.push(`🔥 Aumento de oferta: ${flow.newSellers.length} novos vendedores hoje.`);
+    if (kpi.liquidity > 2) list.push(`💧 Alta liquidez: média de ${kpi.liquidity.toFixed(1)} ofertas/dia.`);
 
-    // Liquidity
-    const days = parseInt(this.selectedPeriod());
-    const offersPerDay = offers.length / days;
-    let liquidityLabel = 'Baixa';
-    if (offersPerDay > 5) liquidityLabel = 'Alta';
-    else if (offersPerDay > 2) liquidityLabel = 'Média';
-
-    // Volume & New Listings
-    const totalVolume = offers.reduce((acc, curr) => acc + parseInt(curr.qtd), 0);
-
-    // Find latest date for new listings count
-    const sortedDates = offers.map(o => o.data_coleta).sort().reverse();
-    const latestDate = sortedDates[0]?.split('T')[0];
-    const newListings = offers.filter(o => o.data_coleta.startsWith(latestDate)).length;
-
-    return {
-      minPrice,
-      avgPrice,
-      totalOffers: offers.length,
-      dispersion,
-      minPriceTrend,
-      avgPriceTrend,
-      liquidityLabel,
-      offersPerDay,
-      totalVolume,
-      newListings
-    };
+    return list.length ? list : ['Nenhum insight relevante no momento.'];
   });
 
-  // Computed: Condition distribution
-  conditionDistribution = computed((): DistributionItem[] => {
-    return MarketAnalysisService.calculateConditionDistribution(this.filteredOffers());
-  });
-
-  // Computed: Language distribution
-  languageDistribution = computed((): DistributionItem[] => {
-    return MarketAnalysisService.calculateLanguageDistribution(this.filteredOffers());
-  });
-
-  // Computed: Best value condition
-  bestValueCondition = computed((): string => {
-    return MarketAnalysisService.getBestValueCondition(this.conditionDistribution());
-  });
-
-  // Computed: Market trend
-  marketTrend = computed((): string => {
-    return MarketAnalysisService.getMarketTrend(this.kpis().avgPriceTrend);
-  });
-
-  // Computed: Latest date in offers
-  latestDate = computed((): string => {
-    const offers = this.filteredOffers();
-    if (offers.length === 0) return '';
-    const date = new Date(offers[0].data_coleta);
-    return date.toLocaleDateString('pt-BR');
-  });
-
-  // Computed: Offers from the latest day
-  latestDayOffers = computed((): MarketOffer[] => {
-    const offers = this.filteredOffers();
-    if (offers.length === 0) return [];
-
-    // Assuming offers are already sorted by date desc
-    const latestDateStr = offers[0].data_coleta.split('T')[0];
-    return offers.filter(o => o.data_coleta.startsWith(latestDateStr));
-  });
-
-  // Computed: Price zone
-  priceZone = computed((): string => {
-    return MarketAnalysisService.getPriceZone(this.kpis().avgPrice, this.kpis().minPrice);
-  });
-
-  // Computed: Recommendation
-  recommendation = computed((): string => {
-    return MarketAnalysisService.getRecommendation(this.priceZone());
-  });
-
-  // Computed: Price evolution
-  priceEvolution = computed((): PriceEvolution[] => {
-    const offers = this.filteredOffers();
-    if (offers.length === 0) return [];
-
-    const byDate = offers.reduce((acc, offer) => {
-      const date = offer.data_coleta;
-      if (!acc[date]) acc[date] = [];
-      acc[date].push(offer.valor);
-      return acc;
-    }, {} as Record<string, number[]>);
-
-    return Object.entries(byDate)
-      .map(([date, prices]) => ({
-        date,
-        avgPrice: prices.reduce((a, b) => a + b, 0) / prices.length,
-        minPrice: Math.min(...prices),
-        maxPrice: Math.max(...prices)
-      }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  });
-
-  constructor() {
-    effect(() => {
-      if (this.selectedCard() && this.priceChartRef) {
-        setTimeout(() => this.updateChart(), 100);
-      }
-    });
-  }
+  // UI State
+  showDetails = signal(false);
+  priceChart: any;
+  volumeChart: any;
 
   async ngOnInit() {
-    console.log('🚀 [Market Analysis] ngOnInit chamado');
-    await this.loadData();
-    this.loadRecentFilters();
+    await this.loadAllCards();
   }
 
-  ngAfterViewInit() {
-    if (this.selectedCard()) {
-      this.updateChart();
+  async loadAllCards() {
+    console.log('🔄 Carregando todas as cartas...');
+    // Select 'carta' and 'url' to derive slug/name
+    const { data, error } = await supabase
+      .from('myp_cards_meg')
+      .select('carta, url')
+      .order('carta', { ascending: true });
+
+    if (error) {
+      console.error('❌ Erro ao carregar cartas:', error);
+      return;
+    }
+
+    if (data) {
+      const unique = new Map();
+      data.forEach((d: any) => {
+        if (d.carta && !unique.has(d.carta)) {
+          // Use 'carta' as both name and slug for now since we lack a real slug
+          unique.set(d.carta, {
+            card_name: d.carta,
+            slug: d.carta
+          });
+        }
+      });
+
+      const cards = Array.from(unique.values());
+      console.log(`✅ ${cards.length} cartas carregadas.`);
+      this.allCards.set(cards);
     }
   }
 
-  // Data loading
-  private async loadData() {
-    console.log('🔍 [Market Analysis] Iniciando loadData...');
+  async selectCard(card: { slug: string, card_name: string }) {
+    this.searchTerm.set(card.card_name);
+    this.loading.set(true);
+
     try {
-      // Primeiro tenta a view normalizada
-      let { data, error } = await supabase
-        .from('v_myp_cards_meg_norm')
-        .select('*')
-        .order('data_coleta', { ascending: false });
+      await Promise.all([
+        this.fetchMetadata(card.slug),
+        this.fetchMarketHistory(card.slug)
+      ]);
 
-      // Se der erro, tenta a tabela original
-      if (error) {
-        console.warn('⚠️ [Market Analysis] View normalizada não encontrada, tentando tabela original...', error);
-        const result = await supabase
-          .from('myp_cards_meg')
-          .select('*')
-          .order('data_coleta', { ascending: false });
-        data = result.data;
-        error = result.error;
-      }
-
-      console.log('📊 [Market Analysis] Resposta do Supabase:', { data: data?.length, error });
-
-      if (error) {
-        console.error('❌ [Market Analysis] Erro ao buscar dados:', error);
-        this.loading.set(false);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        console.warn('⚠️ [Market Analysis] Nenhum dado retornado do Supabase');
-        this.loading.set(false);
-        return;
-      }
-
-      const mappedData = data.map((item: any) => ({
-        ...item,
-        estado: item.estado_norm || item.estado,
-        idioma: item.idioma_norm || item.idioma
-      }));
-
-      this.allOffers.set(mappedData as MarketOffer[]);
-
-      const uniqueCards = Array.from(new Set(data.map(d => d.carta))).sort();
-      console.log('✅ [Market Analysis] Cartas únicas carregadas:', uniqueCards.length);
-      console.log('📋 [Market Analysis] Primeiras 5 cartas:', uniqueCards.slice(0, 5));
-      console.log('📋 [Market Analysis] Signal cardNames antes do set:', this.cardNames().length);
-      this.cardNames.set(uniqueCards);
-      console.log('📋 [Market Analysis] Signal cardNames depois do set:', this.cardNames().length);
-
-      this.loading.set(false);
     } catch (e) {
-      console.error('❌ [Market Analysis] Exceção capturada:', e);
+      console.error(e);
+    } finally {
       this.loading.set(false);
+      setTimeout(() => {
+        this.updateCharts();
+      }, 100);
     }
   }
 
-  // Load card image from card_images table
-  private async loadCardImage(cardName: string) {
-    console.log('🖼️ [Market Analysis] Buscando imagem para:', cardName);
-    try {
-      // Primeiro, vamos ver todas as colunas disponíveis
-      const { data: testData, error: testError } = await supabase
-        .from('card_images')
-        .select('*')
-        .eq('carta', cardName)
-        .limit(1);
+  async fetchMetadata(slug: string) {
+    // 1. Get basic info from myp_cards_meg
+    const { data: cardData } = await supabase
+      .from('myp_cards_meg')
+      .select('*')
+      .eq('carta', slug)
+      .limit(1)
+      .single();
 
-      console.log('🔍 [Market Analysis] Teste de colunas disponíveis:', testData);
-      console.log('🔍 [Market Analysis] Erro no teste:', testError);
+    // 2. Get image from card_images
+    const { data: imageData } = await supabase
+      .from('card_images')
+      .select('image_url')
+      .eq('carta', slug)
+      .limit(1)
+      .single();
 
-      if (testError) {
-        console.warn('⚠️ [Market Analysis] Erro ao acessar card_images:', testError);
-        this.cardImageUrl.set(null);
-        return;
-      }
-
-      if (!testData || testData.length === 0) {
-        console.warn('⚠️ [Market Analysis] Nenhuma carta encontrada com nome:', cardName);
-
-        // Vamos ver quais cartas existem (primeiras 5)
-        const { data: allCards } = await supabase
-          .from('card_images')
-          .select('carta')
-          .limit(5);
-        console.log('📋 [Market Analysis] Primeiras 5 cartas na tabela card_images:', allCards);
-
-        this.cardImageUrl.set(null);
-        return;
-      }
-
-      // Verificar qual campo tem a URL da imagem
-      const cardData = testData[0];
-      console.log('📦 [Market Analysis] Dados da carta encontrada:', cardData);
-
-      // Tentar diferentes nomes de coluna comuns
-      const imageUrl = cardData.image_url || cardData.imageUrl || cardData.url || cardData.image;
-
-      if (imageUrl) {
-        console.log('✅ [Market Analysis] Imagem encontrada:', imageUrl);
-        this.cardImageUrl.set(imageUrl);
-      } else {
-        console.warn('⚠️ [Market Analysis] Carta encontrada mas sem URL de imagem. Campos disponíveis:', Object.keys(cardData));
-        this.cardImageUrl.set(null);
-      }
-    } catch (e) {
-      console.error('❌ [Market Analysis] Erro ao buscar imagem:', e);
-      this.cardImageUrl.set(null);
+    if (cardData) {
+      this.selectedMetadata.set({
+        slug: cardData.carta,
+        name: cardData.carta,
+        image_url: imageData?.image_url || null,
+        set_name: 'MYP Cards',
+        set_num: '---'
+      });
     }
   }
 
-  // Filter management
-  onFilterChange() {
-    if (this.selectedCard()) {
-      this.saveRecentFilter();
-      this.loadCardImage(this.selectedCard());
-    } else {
-      this.cardImageUrl.set(null);
+  async fetchMarketHistory(slug: string) {
+    const offers: MarketOffer[] = [];
+
+    // 1. Fetch from Liga (History)
+    const { data: ligaData } = await supabase
+      .from('cartas_precos_liga')
+      .select('*')
+      .or(`slug_carta.eq.${slug},nome.eq.${slug},carta.eq.${slug}`)
+      .order('data_coleta', { ascending: true });
+
+    if (ligaData) {
+      ligaData.forEach((d: any) => {
+        offers.push({
+          date: new Date(d.data_coleta || d.created_at),
+          price: d.preco || d.price,
+          source: 'liga',
+          condition: d.estado || d.condition,
+          seller: d.vendedor || d.seller
+        });
+      });
     }
-    setTimeout(() => this.updateChart(), 100);
+
+    // 2. Fetch from MYP (myp_cards_meg)
+    const { data: mypData } = await supabase
+      .from('myp_cards_meg')
+      .select('*')
+      .eq('carta', slug)
+      .order('data_coleta', { ascending: true });
+
+    if (mypData) {
+      mypData.forEach((d: any) => {
+        offers.push({
+          date: new Date(d.data_coleta),
+          price: d.valor,
+          source: 'myp',
+          condition: d.estado,
+          seller: d.vendedor
+        });
+      });
+    }
+
+    this.rawOffers.set(offers);
   }
 
-  private saveRecentFilter() {
-    const filter: FilterState = {
-      card: this.selectedCard(),
-      language: this.selectedLanguage(),
-      condition: this.selectedCondition(),
-      period: this.selectedPeriod()
+  calculateKPIs(offers: MarketOffer[]): KPI {
+    if (!offers.length) return { currentMinPrice: 0, avgPrice7d: 0, variation30d: 0, liquidity: 0, volatility: 0 };
+
+    const sorted = [...offers].sort((a, b) => b.date.getTime() - a.date.getTime());
+    const latestDate = sorted[0].date;
+    const sevenDaysAgo = new Date(latestDate);
+    sevenDaysAgo.setDate(latestDate.getDate() - 7);
+    const thirtyDaysAgo = new Date(latestDate);
+    thirtyDaysAgo.setDate(latestDate.getDate() - 30);
+
+    // Current Min
+    const latestOffers = sorted.filter(o => o.date.getTime() === latestDate.getTime());
+    const currentMin = Math.min(...latestOffers.map(o => o.price));
+
+    // Avg 7d
+    const last7d = sorted.filter(o => o.date >= sevenDaysAgo);
+    const avg7d = last7d.reduce((acc, o) => acc + o.price, 0) / (last7d.length || 1);
+
+    // Variation 30d
+    const oldOffers = sorted.filter(o => o.date <= thirtyDaysAgo && o.date > new Date(thirtyDaysAgo.getTime() - 86400000 * 5)); // Window around 30d ago
+    const oldPrice = oldOffers.length ? (oldOffers.reduce((acc, o) => acc + o.price, 0) / oldOffers.length) : avg7d;
+    const variation = ((avg7d - oldPrice) / oldPrice) * 100;
+
+    return {
+      currentMinPrice: currentMin,
+      avgPrice7d: avg7d,
+      variation30d: variation,
+      liquidity: sorted.filter(o => o.date >= thirtyDaysAgo).length / 30,
+      volatility: 0 // TODO: Implement std dev
     };
-
-    const recent = this.recentFilters();
-    const filtered = recent.filter(r => r.card !== filter.card);
-    this.recentFilters.set([filter, ...filtered].slice(0, 5));
-
-    localStorage.setItem('recentFilters', JSON.stringify(this.recentFilters()));
   }
 
-  private loadRecentFilters() {
-    const stored = localStorage.getItem('recentFilters');
-    if (stored) {
-      this.recentFilters.set(JSON.parse(stored));
-    }
+  processDailyStats(offers: MarketOffer[]): DailyStats[] {
+    const grouped = new Map<string, number[]>();
+
+    offers.forEach(o => {
+      const dateStr = o.date.toISOString().split('T')[0];
+      if (!grouped.has(dateStr)) grouped.set(dateStr, []);
+      grouped.get(dateStr)?.push(o.price);
+    });
+
+    const stats: DailyStats[] = [];
+    grouped.forEach((prices, date) => {
+      stats.push({
+        date,
+        minPrice: Math.min(...prices),
+        avgPrice: prices.reduce((a, b) => a + b, 0) / prices.length,
+        volume: prices.length
+      });
+    });
+
+    return stats.sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  applyRecentFilter(filter: FilterState) {
-    this.selectedCard.set(filter.card);
-    this.selectedLanguage.set(filter.language);
-    this.selectedCondition.set(filter.condition);
-    this.selectedPeriod.set(filter.period);
-    this.onFilterChange();
+  analyzeSellerFlow(offers: MarketOffer[]) {
+    if (offers.length === 0) return { newSellers: [], exitedSellers: [] };
+
+    // Group by date
+    const byDate = new Map<string, Set<string>>();
+    offers.forEach(o => {
+      if (!o.seller) return;
+      const d = o.date.toISOString().split('T')[0];
+      if (!byDate.has(d)) byDate.set(d, new Set());
+      byDate.get(d)?.add(o.seller);
+    });
+
+    const dates = Array.from(byDate.keys()).sort();
+    if (dates.length < 2) return { newSellers: [], exitedSellers: [] };
+
+    const today = dates[dates.length - 1];
+    const yesterday = dates[dates.length - 2];
+
+    const todaySellers = byDate.get(today)!;
+    const yesterdaySellers = byDate.get(yesterday)!;
+
+    const newSellers = Array.from(todaySellers).filter(s => !yesterdaySellers.has(s));
+    const exitedSellers = Array.from(yesterdaySellers).filter(s => !todaySellers.has(s));
+
+    return { newSellers, exitedSellers };
   }
 
-  // Quick filters
-  setQuickFilter(filter: string) {
-    this.quickFilter.set(this.quickFilter() === filter ? '' : filter);
+  updateCharts() {
+    const stats = this.dailyStats();
+    if (!stats.length) return;
+
+    // Destroy old charts
+    if (this.priceChart) this.priceChart.destroy();
+    if (this.volumeChart) this.volumeChart.destroy();
+
+    // Price Chart
+    const ctxPrice = document.getElementById('priceChart') as HTMLCanvasElement;
+    this.priceChart = new Chart(ctxPrice, {
+      type: 'line',
+      data: {
+        labels: stats.map(s => s.date),
+        datasets: [
+          {
+            label: 'Preço Mínimo',
+            data: stats.map(s => s.minPrice),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: true,
+            tension: 0.4
+          },
+          {
+            label: 'Preço Médio',
+            data: stats.map(s => s.avgPrice),
+            borderColor: '#94a3b8',
+            borderDash: [5, 5],
+            tension: 0.4,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { beginAtZero: false } }
+      }
+    });
+
+    // Volume Chart
+    const ctxVol = document.getElementById('volumeChart') as HTMLCanvasElement;
+    this.volumeChart = new Chart(ctxVol, {
+      type: 'bar',
+      data: {
+        labels: stats.map(s => s.date),
+        datasets: [{
+          label: 'Ofertas',
+          data: stats.map(s => s.volume),
+          backgroundColor: '#10b981',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
+      }
+    });
   }
 
-  // Sorting
-  sortBy(column: string) {
-    if (this.sortColumn() === column) {
-      this.sortDirection.set(this.sortDirection() === 'asc' ? 'desc' : 'asc');
-    } else {
-      this.sortColumn.set(column);
-      this.sortDirection.set('desc');
-    }
+  toggleDetails() {
+    this.showDetails.update(v => !v);
   }
 
-  // Template helpers
-  getScoreLabel(offer: MarketOffer): string {
-    return MarketAnalysisService.calculateOpportunityScore(offer, this.kpis().avgPrice).label;
+  handleImageError(event: any) {
+    event.target.src = 'assets/placeholder-card.png';
   }
 
-  getScoreClass(offer: MarketOffer): string {
-    return MarketAnalysisService.calculateOpportunityScore(offer, this.kpis().avgPrice).color;
-  }
-
-  isPriceOutlier(offer: MarketOffer): boolean {
-    return MarketAnalysisService.isPriceOutlier(offer, this.filteredOffers());
-  }
-
-  getPriceOutlierLabel(offer: MarketOffer): string {
-    return MarketAnalysisService.getPriceOutlierLabel(offer, this.kpis().avgPrice);
-  }
-
-  normalizeCondition(condition: string): string {
-    return MarketAnalysisService.normalizeCondition(condition);
-  }
-
-  formatPrice(price: number): string {
-    return price.toFixed(2);
-  }
-
-  // Export
-  exportCSV() {
-    MarketAnalysisService.exportToCSV(
-      this.displayedOffers(),
-      this.selectedCard(),
-      this.kpis().avgPrice
-    );
-  }
-
-  // Chart rendering
-  private updateChart() {
-    if (!this.priceChartRef) return;
-
-    const evolution = this.priceEvolution();
-    if (evolution.length === 0) return;
-
-    const element = this.priceChartRef.nativeElement;
-    element.innerHTML = '';
-
-    const canvas = document.createElement('canvas');
-    canvas.width = element.offsetWidth;
-    canvas.height = element.offsetHeight || 200;
-    element.appendChild(canvas);
-
-    ChartRenderer.renderPriceChart(canvas, evolution);
+  getSellerNames(sellers: string[] | undefined) {
+    if (!sellers) return '';
+    return sellers.slice(0, 3).join(', ') + (sellers.length > 3 ? ` e mais ${sellers.length - 3}` : '');
   }
 }

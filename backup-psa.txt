@@ -102,21 +102,6 @@ interface DailyValue {
         </div>
       </div>
 
-      <!-- Missing Data Warning -->
-      <div class="warning-box" *ngIf="missingDataCards().length > 0">
-        <div class="warning-icon">⚠️</div>
-        <div class="warning-content">
-          <p class="warning-title">Dados de mercado não encontrados para {{ missingDataCards().length }} carta(s)</p>
-          <p class="warning-desc">O gráfico exibe apenas o valor das cartas com histórico disponível.</p>
-          <details>
-            <summary>Ver cartas sem dados</summary>
-            <ul>
-              <li *ngFor="let card of missingDataCards()">{{ card }}</li>
-            </ul>
-          </details>
-        </div>
-      </div>
-
       <!-- Chart -->
       <div class="chart-wrapper">
         <div *ngIf="loading()" class="loading-state">
@@ -134,25 +119,6 @@ interface DailyValue {
   `,
   styles: [`
     /* ... (styles remain unchanged) ... */
-    .warning-box {
-      background: #fffbeb;
-      border: 1px solid #fcd34d;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 24px;
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-    }
-    .warning-icon { font-size: 20px; }
-    .warning-content { flex: 1; }
-    .warning-title { font-weight: 700; color: #92400e; margin: 0 0 4px 0; font-size: 14px; }
-    .warning-desc { color: #b45309; margin: 0 0 8px 0; font-size: 13px; }
-    details { color: #92400e; font-size: 12px; cursor: pointer; }
-    summary { font-weight: 600; margin-bottom: 4px; }
-    ul { margin: 0; padding-left: 20px; }
-    li { margin-bottom: 2px; }
-
     .consolidated-container {
       background: rgba(255, 255, 255, 0.85);
       border: 2px solid rgba(255, 193, 204, 0.3);
@@ -323,25 +289,17 @@ export class PortfolioConsolidatedComponent implements OnInit, OnDestroy {
   loading = signal(false);
   chartData = signal<DailyValue[]>([]);
   conversionFactors = signal<ConversionFactors>({ idioma: new Map(), estado: new Map() });
-  missingDataCards = signal<string[]>([]);
 
   private refreshSubscription: Subscription;
 
   // Computed KPIs
   kpis = computed(() => {
     const data = this.chartData();
-    if (!data || data.length === 0) return null;
+    if (data.length === 0) return null;
 
-    const currentValue = data[data.length - 1].value || 0;
-    const startValue = data[0].value || 0;
-
-    let percentChange = 0;
-    if (startValue > 0) {
-      percentChange = ((currentValue - startValue) / startValue) * 100;
-    } else if (currentValue > 0) {
-      percentChange = 100; // 0 to something is 100% increase (conceptually)
-    }
-
+    const currentValue = data[data.length - 1].value;
+    const startValue = data[0].value;
+    const percentChange = ((currentValue - startValue) / startValue) * 100;
     const valueChange = currentValue - startValue;
 
     // Find max and min with dates
@@ -466,13 +424,10 @@ export class PortfolioConsolidatedComponent implements OnInit, OnDestroy {
         startDate = earliestPurchase;
       }
 
-      // 3. Process price history with Forward Filling
-      const allDates = new Set<string>();
-      const cardPriceHistories = new Map<string, Map<string, number>>();
+      // 3. For each position, get price history
+      const dailyValues = new Map<string, number>();
       const factors = this.conversionFactors();
-      const missingCards: string[] = [];
 
-      // 3a. Fetch all histories and collect all dates
       for (const position of positions) {
         const priceHistory = await this.getPriceHistory(
           position.carta,
@@ -480,68 +435,37 @@ export class PortfolioConsolidatedComponent implements OnInit, OnDestroy {
           endDate.toISOString().split('T')[0]
         );
 
-        if (priceHistory.length === 0) {
-          missingCards.push(position.carta);
-          continue;
-        }
-
-        const priceMap = new Map<string, number>();
+        // Deduplicate price history by date (keep the last entry for each day)
+        const uniqueDailyPrices = new Map<string, any>();
         priceHistory.forEach((priceData) => {
           const dateKey = priceData.data_coleta.split('T')[0];
-          allDates.add(dateKey);
+          uniqueDailyPrices.set(dateKey, priceData);
+        });
 
+        // For each unique date, calculate value
+        uniqueDailyPrices.forEach((priceData, dateKey) => {
           const adjustedPrice = this.getAdjustedPrice(
             priceData,
             position.idioma,
             position.estado,
             factors
           );
-          priceMap.set(dateKey, adjustedPrice);
+
+          const positionValue = position.qtd * adjustedPrice;
+          dailyValues.set(dateKey, (dailyValues.get(dateKey) || 0) + positionValue);
         });
-
-        cardPriceHistories.set(position.carta, priceMap);
       }
 
-      this.missingDataCards.set(missingCards);
+      // 4. Convert to array and sort
+      const consolidated: DailyValue[] = Array.from(dailyValues.entries())
+        .map(([dateStr, value]) => ({
+          date: new Date(dateStr),
+          value,
+          breakdown: [] // TODO: Add card breakdown if needed
+        }))
+        .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-      // 3b. Sort dates
-      const sortedDates = Array.from(allDates).sort();
-
-      // 3c. Calculate total value for each date (with forward fill)
-      const consolidated: DailyValue[] = [];
-      const lastKnownPrices = new Map<string, number>();
-
-      for (const dateStr of sortedDates) {
-        let dailyTotal = 0;
-
-        for (const position of positions) {
-          // Skip if card has no history at all
-          if (missingCards.includes(position.carta)) continue;
-
-          const priceMap = cardPriceHistories.get(position.carta);
-          if (priceMap?.has(dateStr)) {
-            const price = priceMap.get(dateStr)!;
-            lastKnownPrices.set(position.carta, price);
-            dailyTotal += price * position.qtd;
-          } else if (lastKnownPrices.has(position.carta)) {
-            // Forward fill
-            dailyTotal += lastKnownPrices.get(position.carta)! * position.qtd;
-          }
-          // If no price yet (before first purchase/data point), it contributes 0
-        }
-
-        if (dailyTotal > 0) {
-          consolidated.push({
-            date: new Date(dateStr),
-            value: dailyTotal,
-            breakdown: []
-          });
-        }
-      }
-
-      console.log(`✅ [Consolidated] Generated ${consolidated.length} data points`);
-      console.log('📊 [Consolidated] Sample Data:', consolidated.slice(-3));
-
+      console.log(`✅ Consolidated ${consolidated.length} daily values`);
       this.chartData.set(consolidated);
 
     } catch (e) {
@@ -792,20 +716,6 @@ export class PortfolioConsolidatedComponent implements OnInit, OnDestroy {
 
       tooltip
         .transition()
-        .duration(100)
-        .style('opacity', 1);
-
-      tooltip
-        .html(`
-          <strong>${d.date.toLocaleDateString('pt-BR')}</strong><br/>
-          Valor: R$ ${d.value.toFixed(2)}
-        `)
-        .style('left', (event.pageX - element.getBoundingClientRect().left + 10) + 'px')
-        .style('top', (event.pageY - element.getBoundingClientRect().top - 10) + 'px');
-    });
-
-    overlay.on('mouseout', () => {
-      focus.style('opacity', 0);
       tooltip.transition().duration(200).style('opacity', 0);
     });
   }

@@ -64,8 +64,8 @@ import { Transaction, TransactionType, TransactionSummary, TransactionFilters } 
             class="filter-select"
           >
             <option value="ALL">Todos</option>
-            <option value="BUY">Compras</option>
-            <option value="SELL">Vendas</option>
+            <option value="COMPRA">Compras</option>
+            <option value="VENDA">Vendas</option>
             <option value="TRADE">Trades</option>
           </select>
         </div>
@@ -135,16 +135,16 @@ import { Transaction, TransactionType, TransactionSummary, TransactionFilters } 
           </thead>
           <tbody>
             <tr *ngFor="let transaction of paginatedTransactions()" class="transaction-row">
-              <td>{{ formatDate(transaction.data_transacao) }}</td>
+              <td>{{ formatDate(transaction.data) }}</td>
               <td>
-                <span class="type-badge" [class]="'badge-' + transaction.transaction_type.toLowerCase()">
-                  {{ getTypeLabel(transaction.transaction_type) }}
+                <span class="type-badge" [class]="'badge-' + getBadgeClass(transaction.tipo)">
+                  {{ getTypeLabel(transaction.tipo) }}
                 </span>
               </td>
               <td class="carta-cell">{{ transaction.carta }}</td>
               <td>{{ transaction.quantidade }}</td>
               <td>R$ {{ formatPrice(transaction.preco_unitario) }}</td>
-              <td class="total-cell">R$ {{ formatPrice(transaction.valor_total) }}</td>
+              <td class="total-cell">R$ {{ formatPrice(transaction.total) }}</td>
               <td>
                 <span class="condition-badge" *ngIf="transaction.estado">{{ transaction.estado }}</span>
                 <span *ngIf="!transaction.estado">-</span>
@@ -534,7 +534,7 @@ export class TransactionHistoryComponent implements OnInit {
 
     // Filter by type
     if (f.type !== 'ALL') {
-      transactions = transactions.filter(t => t.transaction_type === f.type);
+      transactions = transactions.filter(t => t.tipo === f.type);
     }
 
     // Filter by carta
@@ -545,10 +545,10 @@ export class TransactionHistoryComponent implements OnInit {
 
     // Filter by date range
     if (f.dateStart) {
-      transactions = transactions.filter(t => t.data_transacao >= f.dateStart);
+      transactions = transactions.filter(t => t.data >= f.dateStart);
     }
     if (f.dateEnd) {
-      transactions = transactions.filter(t => t.data_transacao <= f.dateEnd);
+      transactions = transactions.filter(t => t.data <= f.dateEnd);
     }
 
     return transactions;
@@ -558,12 +558,12 @@ export class TransactionHistoryComponent implements OnInit {
     const transactions = this.allTransactions();
 
     const totalGasto = transactions
-      .filter(t => t.transaction_type === 'BUY')
-      .reduce((sum, t) => sum + t.valor_total, 0);
+      .filter(t => t.tipo === 'COMPRA')
+      .reduce((sum, t) => sum + t.total, 0);
 
     const totalVendido = transactions
-      .filter(t => t.transaction_type === 'SELL')
-      .reduce((sum, t) => sum + t.valor_total, 0);
+      .filter(t => t.tipo === 'VENDA')
+      .reduce((sum, t) => sum + t.total, 0);
 
     const lucroLiquido = totalVendido - totalGasto;
 
@@ -572,9 +572,9 @@ export class TransactionHistoryComponent implements OnInit {
       totalVendido,
       lucroLiquido,
       totalTransacoes: transactions.length,
-      numCompras: transactions.filter(t => t.transaction_type === 'BUY').length,
-      numVendas: transactions.filter(t => t.transaction_type === 'SELL').length,
-      numTrades: transactions.filter(t => t.transaction_type === 'TRADE').length
+      numCompras: transactions.filter(t => t.tipo === 'COMPRA').length,
+      numVendas: transactions.filter(t => t.tipo === 'VENDA').length,
+      numTrades: transactions.filter(t => t.tipo === 'TRADE').length
     };
   });
 
@@ -599,7 +599,7 @@ export class TransactionHistoryComponent implements OnInit {
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
-        .order('data_transacao', { ascending: false });
+        .order('data', { ascending: false });
 
       if (error) {
         console.error('❌ [Transaction History] Erro ao carregar transações:', error);
@@ -638,11 +638,20 @@ export class TransactionHistoryComponent implements OnInit {
 
   getTypeLabel(type: TransactionType): string {
     const labels = {
-      'BUY': 'Compra',
-      'SELL': 'Venda',
+      'COMPRA': 'Compra',
+      'VENDA': 'Venda',
       'TRADE': 'Trade'
     };
     return labels[type];
+  }
+
+  getBadgeClass(type: TransactionType): string {
+    const classes = {
+      'COMPRA': 'buy',
+      'VENDA': 'sell',
+      'TRADE': 'trade'
+    };
+    return classes[type];
   }
 
   exportCSV() {
@@ -651,12 +660,12 @@ export class TransactionHistoryComponent implements OnInit {
     const csv = [
       ['Data', 'Tipo', 'Carta', 'Quantidade', 'Preço Unitário', 'Total', 'Estado', 'Idioma', 'Notas'].join(','),
       ...transactions.map(t => [
-        this.formatDate(t.data_transacao),
-        this.getTypeLabel(t.transaction_type),
+        this.formatDate(t.data),
+        this.getTypeLabel(t.tipo),
         `"${t.carta}"`,
         t.quantidade,
         t.preco_unitario,
-        t.valor_total,
+        t.total,
         t.estado || '',
         t.idioma || '',
         `"${t.notas || ''}"`

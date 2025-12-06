@@ -1,19 +1,19 @@
-export type TransactionType = 'BUY' | 'SELL' | 'TRADE';
+export type TransactionType = 'COMPRA' | 'VENDA' | 'TRADE';
 
 export interface Transaction {
     id: string;
     user_id: string;
-    transaction_type: TransactionType;
+    tipo: TransactionType;
     carta: string;
     quantidade: number;
     preco_unitario: number;
-    valor_total: number;
+    total: number;
     idioma?: string;
     estado?: string;
-    data_transacao: string;
+    data: string;
     notas?: string;
     created_at: string;
-    updated_at: string;
+    updated_at?: string;
 }
 
 export interface TransactionSummary {

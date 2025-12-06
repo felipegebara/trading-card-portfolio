@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <title>Trading Card Portfolio</title>
@@ -8,44 +9,171 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    // Custom Tailwind configuration for Pokemon-inspired pastel colors
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            // Pokemon Pastel Palette
+            pikachu: {
+              50: '#fffef5',
+              100: '#fffaeb',
+              200: '#fff3c7',
+              300: '#ffe9a3',
+              400: '#ffd65b',
+              500: '#ffc700', // Main Pikachu yellow
+              600: '#e6b300',
+              700: '#cc9f00',
+              800: '#b38b00',
+              900: '#997700',
+            },
+            pokemon: {
+              pink: '#ffc1cc', // Pastel pink
+              blue: '#a8d8ea', // Pastel blue
+              green: '#bce9c5', // Pastel green
+              lavender: '#d5b9f0', // Pastel purple
+              peach: '#ffd4b8', // Pastel peach
+              mint: '#c7f0db', // Mint green
+              cream: '#fef8e8', // Cream
+            },
+            pokeball: {
+              red: '#ff6b6b',
+              white: '#f8f9fa',
+            }
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    /* Custom scrollbar for a better dark mode experience */
+    /* Custom scrollbar with Pokemon theme */
     ::-webkit-scrollbar {
-      width: 8px;
+      width: 10px;
     }
+
     ::-webkit-scrollbar-track {
-      background: #1e293b; /* slate-800 */
+      background: #fef8e8;
+      /* pokemon-cream */
     }
+
     ::-webkit-scrollbar-thumb {
-      background: #475569; /* slate-600 */
-      border-radius: 4px;
+      background: linear-gradient(180deg, #ffc700 0%, #ffc1cc 100%);
+      /* pikachu to pink */
+      border-radius: 5px;
     }
+
     ::-webkit-scrollbar-thumb:hover {
-      background: #64748b; /* slate-500 */
+      background: linear-gradient(180deg, #ffd65b 0%, #ffb3c1 100%);
     }
-    /* Enhanced background and modal animations */
+
+    /* Pokemon-inspired background with pokeball pattern */
     body {
-        background-color: #0f172a; /* bg-slate-900 */
-        background-image: radial-gradient(circle at 1% 1%, rgba(34, 197, 94, 0.1), transparent 30%), 
-                          radial-gradient(circle at 99% 99%, rgba(59, 130, 246, 0.1), transparent 40%);
-        background-attachment: fixed;
+      background-color: #fef8e8;
+      /* cream background */
+      background-image:
+        radial-gradient(circle at 10% 20%, rgba(255, 193, 204, 0.15), transparent 50%),
+        radial-gradient(circle at 90% 80%, rgba(168, 216, 234, 0.15), transparent 50%),
+        radial-gradient(circle at 50% 50%, rgba(188, 233, 197, 0.1), transparent 70%);
+      background-attachment: fixed;
     }
+
+    /* Enhanced animations */
     @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
     }
+
     @keyframes scaleIn {
-        from { opacity: 0; transform: scale(0.95); }
-        to { opacity: 1; transform: scale(1); }
+      from {
+        opacity: 0;
+        transform: scale(0.95);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
     }
+
+    @keyframes bounce-soft {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-5px);
+      }
+    }
+
     .modal-backdrop {
-        animation: fadeIn 0.3s ease-out forwards;
+      animation: fadeIn 0.3s ease-out forwards;
     }
+
     .modal-content {
-        animation: scaleIn 0.3s ease-out forwards;
+      animation: scaleIn 0.3s ease-out forwards;
+    }
+
+    .bounce-soft {
+      animation: bounce-soft 2s infinite;
+    }
+
+    /* Enhanced KPI Styles - Pokemon Premium */
+    .kpi-item {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(254, 248, 232, 0.7) 100%) !important;
+      border: 2px solid rgba(255, 199, 0, 0.2) !important;
+      box-shadow: 0 6px 20px rgba(255, 193, 204, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+      transition: all 0.3s ease !important;
+    }
+
+    .kpi-item:hover {
+      transform: translateY(-6px) scale(1.03) !important;
+      box-shadow: 0 12px 30px rgba(255, 193, 204, 0.25), 0 6px 15px rgba(255, 199, 0, 0.2) !important;
+      border-color: rgba(255, 199, 0, 0.4) !important;
+    }
+
+    .kpi-icon {
+      animation: bounce 2s ease-in-out infinite !important;
+    }
+
+    @keyframes bounce {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-5px);
+      }
+    }
+
+    .kpi-value.green {
+      background: linear-gradient(135deg, #ffc700 0%, #ffb300 100%) !important;
+      -webkit-background-clip: text !important;
+      -webkit-text-fill-color: transparent !important;
+      background-clip: text !important;
+    }
+
+    .section-card {
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.08), 0 4px 10px -2px rgba(255, 193, 204, 0.15) !important;
+      transition: all 0.3s ease !important;
+    }
+
+    .section-card:hover {
+      box-shadow: 0 15px 40px -5px rgba(0, 0, 0, 0.12), 0 6px 15px -3px rgba(255, 193, 204, 0.25) !important;
+      transform: translateY(-2px) !important;
     }
   </style>
-<script type="importmap">
+  <script type="importmap">
 {
   "imports": {
     "rxjs": "https://aistudiocdn.com/rxjs@^7.8.2?conditions=es2015",
@@ -64,9 +192,11 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
 </head>
-<body class="bg-slate-900 font-sans">
+
+<body class="bg-pokemon-cream font-sans">
   <app-root></app-root>
 </body>
+
 </html>

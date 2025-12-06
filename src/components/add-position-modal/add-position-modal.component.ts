@@ -356,13 +356,14 @@ export class AddPositionModalComponent implements OnInit {
       // 2. Insert into transactions (BUY)
       const transactionData = {
         user_id: user.id,
-        transaction_type: 'BUY',
+        tipo: 'COMPRA', // Changed from transaction_type to tipo, and 'BUY' to 'COMPRA' for consistency with PT-BR app
         carta: formVal.carta,
         quantidade: formVal.quantidade,
         preco_unitario: formVal.precoCompra,
+        total: formVal.quantidade * formVal.precoCompra, // Added total
         idioma: formVal.idioma,
         estado: formVal.condicao,
-        data_transacao: formVal.dataCompra,
+        data: formVal.dataCompra, // Changed from data_transacao to data
         notas: 'Compra adicionada via modal'
       };
 

@@ -66,6 +66,11 @@ export class ChartRenderer {
         }
     }
 
+    private static getXPosition(i: number, length: number, width: number, padding: number): number {
+        if (length <= 1) return padding + width / 2;
+        return padding + (width / (length - 1)) * i;
+    }
+
     private static drawPriceBands(
         ctx: CanvasRenderingContext2D,
         evolution: PriceEvolution[],
@@ -75,11 +80,13 @@ export class ChartRenderer {
         minPrice: number,
         priceRange: number
     ): void {
+        if (evolution.length < 2) return; // Need at least 2 points for bands
+
         // Max area (red)
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.beginPath();
         evolution.forEach((point, i) => {
-            const x = padding + (width / (evolution.length - 1)) * i;
+            const x = this.getXPosition(i, evolution.length, width, padding);
             const y = padding + height - ((point.maxPrice - minPrice) / priceRange) * height;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
@@ -93,7 +100,7 @@ export class ChartRenderer {
         ctx.fillStyle = 'rgba(34, 197, 94, 0.1)';
         ctx.beginPath();
         evolution.forEach((point, i) => {
-            const x = padding + (width / (evolution.length - 1)) * i;
+            const x = this.getXPosition(i, evolution.length, width, padding);
             const y = padding + height - ((point.minPrice - minPrice) / priceRange) * height;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
@@ -118,7 +125,7 @@ export class ChartRenderer {
         ctx.beginPath();
 
         evolution.forEach((point, i) => {
-            const x = padding + (width / (evolution.length - 1)) * i;
+            const x = this.getXPosition(i, evolution.length, width, padding);
             const y = padding + height - ((point.avgPrice - minPrice) / priceRange) * height;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
@@ -169,7 +176,7 @@ export class ChartRenderer {
         ctx.fillStyle = '#22c55e';
 
         evolution.forEach((point, i) => {
-            const x = padding + (width / (evolution.length - 1)) * i;
+            const x = this.getXPosition(i, evolution.length, width, padding);
             const y = padding + height - ((point.avgPrice - minPrice) / priceRange) * height;
             ctx.beginPath();
             ctx.arc(x, y, 4, 0, Math.PI * 2);
@@ -195,7 +202,7 @@ export class ChartRenderer {
         const step = Math.max(1, Math.ceil(evolution.length / 6));
         evolution.forEach((point, i) => {
             if (i % step === 0 || i === evolution.length - 1) {
-                const x = padding + (width / (evolution.length - 1)) * i;
+                const x = this.getXPosition(i, evolution.length, width, padding);
                 const date = new Date(point.date).toLocaleDateString('pt-BR', {
                     day: '2-digit',
                     month: '2-digit'
@@ -203,6 +210,7 @@ export class ChartRenderer {
                 ctx.fillText(date, x, canvas.height - 10);
             }
         });
+
 
         // Y-axis labels (prices)
         ctx.textAlign = 'right';

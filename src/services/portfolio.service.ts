@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { supabase } from '../supabaseClient';
+import { Subject } from 'rxjs';
 
 export type CondicaoCarta = 'NM' | 'SP' | 'MP' | 'HP' | 'D';
 export type IdiomaCarta = 'PT-BR' | 'ING' | 'JPN';
@@ -15,6 +16,13 @@ export interface NovaPosicao {
 
 @Injectable({ providedIn: 'root' })
 export class PortfolioService {
+    private refreshSubject = new Subject<void>();
+    refresh$ = this.refreshSubject.asObservable();
+
+    notifyUpdate() {
+        this.refreshSubject.next();
+    }
+
     async addPosicao(data: NovaPosicao): Promise<void> {
         // pega usuário logado
         const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -41,5 +49,7 @@ export class PortfolioService {
             console.error('Erro ao inserir em portfolio_cards', error);
             throw new Error(error.message);
         }
+
+        this.notifyUpdate();
     }
 }

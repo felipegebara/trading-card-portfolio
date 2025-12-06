@@ -1,0 +1,731 @@
+import { Component, OnInit, signal, computed, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { supabase } from '../../supabaseClient';
+
+declare const Chart: any;
+
+interface NormalizedOffer {
+  card_name: string;
+  price: number;
+  condition: string;
+  language: string;
+  quantity: number;
+  seller: string;
+  date: string;
+  source: string;
+}
+
+interface MarketKPIs {
+  minPrice: number;
+  avg7d: number;
+  avg30d: number;
+  variation30d: number;
+  liquidity: string;
+  topCondition: string;
+  topLanguage: string;
+  offersCount: number;
+}
+
+@Component({
+  selector: 'app-market-analysis-advanced',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  template: `
+    <div class="analytics-container">
+      <!-- Header -->
+      <header class="header">
+        <div>
+          <h1 class="title">🔍 Market Analytics</h1>
+          <p class="subtitle">Análise inteligente de mercado - Liga Pokémon + MYP Cards</p>
+        </div>
+      </header>
+
+      <!-- Card Selector -->
+      <div class="selector-section">
+        <label>SELECIONE UMA CARTA</label>
+        <select [(ngModel)]="selectedCardName" (ngModelChange)="onCardSelection($event)" class="card-select">
+          <option value="">-- Selecione uma carta --</option>
+          @for (card of availableCards(); track card) {
+          <option [value]="card">{{ card }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- Card Image (if selected) -->
+      @if (selectedCardName() && cardImage()) {
+      <div class="card-image-section">
+        <div class="card-image-wrapper">
+          <img [src]="cardImage()" [alt]="selectedCardName()" />
+          <p class="card-name-label">{{ selectedCardName() }}</p>
+        </div>
+      </div>
+      }
+
+      <!-- Loading State -->
+      @if (loading()) {
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>Carregando ofertas de mercado...</p>
+      </div>
+      }
+
+      <!-- Error State -->
+      @if (!loading() && errorMessage()) {
+      <div class="empty-state">
+        <span>⚠️</span>
+        <p>{{ errorMessage() }}</p>
+      </div>
+      }
+
+      <!-- Main Content -->
+      @if (!loading() && !errorMessage() && normalizedOffers().length > 0) {
+
+      <!-- KPIs Grid -->
+      <div class="kpis-grid">
+        <div class="kpi-card highlight">
+          <p class="kpi-label">PREÇO MÍNIMO</p>
+          <p class="kpi-value">{{ kpis().minPrice | currency:'BRL':'symbol':'1.2-2':'pt' }}</p>
+          <p class="kpi-sub">Menor preço encontrado</p>
+        </div>
+
+        <div class="kpi-card">
+          <p class="kpi-label">MÉDIA 7 DIAS</p>
+          <p class="kpi-value">{{ kpis().avg7d | currency:'BRL':'symbol':'1.2-2':'pt' }}</p>
+        </div>
+
+        <div class="kpi-card">
+          <p class="kpi-label">MÉDIA 30 DIAS</p>
+          <p class="kpi-value">{{ kpis().avg30d | currency:'BRL':'symbol':'1.2-2':'pt' }}</p>
+        </div>
+
+        <div class="kpi-card">
+          <p class="kpi-label">VARIAÇÃO 30D</p>
+          <p class="kpi-value" [class.positive]="kpis().variation30d >= 0" [class.negative]="kpis().variation30d < 0">
+            {{ kpis().variation30d >= 0 ? '+' : '' }}{{ kpis().variation30d | number:'1.1-1' }}%
+          </p>
+        </div>
+
+        <div class="kpi-card">
+          <p class="kpi-label">LIQUIDEZ</p>
+          <p class="kpi-value small">{{ kpis().liquidity }}</p>
+          <p class="kpi-sub">{{ kpis().offersCount }} ofertas</p>
+        </div>
+
+        <div class="kpi-card">
+          <p class="kpi-label">DOMINÂNCIA</p>
+          <p class="kpi-value small">{{ kpis().topCondition }}</p>
+          <p class="kpi-sub">{{ kpis().topLanguage }}</p>
+        </div>
+      </div>
+
+      <!-- Charts Section -->
+      <div class="charts-section">
+        <!-- Price Evolution -->
+        <div class="chart-card large">
+          <h3>📈 Evolução do Preço Mínimo</h3>
+          <canvas #priceChart></canvas>
+        </div>
+
+        <!-- Volume Chart -->
+        <div class="chart-card">
+          <h3>📊 Volume de Ofertas por Dia</h3>
+          <canvas #volumeChart></canvas>
+        </div>
+
+        <!-- Heatmap Chart -->
+        <div class="chart-card">
+          <h3>🌡️ Preço por Idioma x Condição</h3>
+          <canvas #heatmapChart></canvas>
+        </div>
+      </div>
+
+      <!-- Insights Section -->
+      <div class="insights-section">
+        <h3>💡 Insights Principais</h3>
+        <div class="insights-grid">
+          @for (insight of insights(); track $index) {
+          <div class="insight-card">
+            <span class="insight-icon">{{ insight.icon }}</span>
+            <p>{{ insight.text }}</p>
+          </div>
+          }
+        </div>
+      </div>
+
+      <!-- Toggle Table Button -->
+      <div class="toggle-section">
+        <button (click)="showTable.set(!showTable())" class="toggle-btn">
+          {{ showTable() ? '📊 Voltar para Analytics' : '🔍 Ver ofertas detalhadas' }}
+        </button>
+      </div>
+
+      <!-- Detailed Table (Collapsible) -->
+      @if (showTable()) {
+      <div class="table-section animate-fade-in">
+        <h3>📋 Ofertas Detalhadas ({{ normalizedOffers().length }})</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Carta</th>
+                <th>Preço</th>
+                <th>Condição</th>
+                <th>Idioma</th>
+                <th>Qtd</th>
+                <th>Vendedor</th>
+                <th>Fonte</th>
+                <th>Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (offer of normalizedOffers().slice(0, 100); track $index) {
+              <tr>
+                <td class="card-name">{{ offer.card_name }}</td>
+                <td class="price">{{ offer.price | currency:'BRL':'symbol':'1.2-2':'pt' }}</td>
+                <td><span class="badge">{{ offer.condition }}</span></td>
+                <td>{{ offer.language }}</td>
+                <td class="qty">{{ offer.quantity }}</td>
+                <td class="seller">{{ offer.seller || 'N/A' }}</td>
+                <td><span class="source-badge" [class.liga]="offer.source === 'liga'" [class.myp]="offer.source === 'myp'">{{ offer.source }}</span></td>
+                <td class="date">{{ offer.date | date:'dd/MM/yy' }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+          @if (normalizedOffers().length > 100) {
+          <p class="table-info">Mostrando 100 de {{ normalizedOffers().length }} ofertas</p>
+          }
+        </div>
+      </div>
+      }
+      }
+
+      <!-- Empty State -->
+      @if (!loading() && !errorMessage() && normalizedOffers().length === 0 && selectedCardName()) {
+      <div class="empty-state">
+        <span>📭</span>
+        <p>Ainda não há ofertas registradas para esta carta</p>
+      </div>
+      }
+
+      @if (!loading() && !selectedCardName()) {
+      <div class="empty-state">
+        <span>👆</span>
+        <p>Selecione uma carta para ver ofertas de mercado</p>
+      </div>
+      }
+    </div>
+  `,
+  styles: [`
+    /* Todos os estilos anteriores permanecem iguais */
+    .analytics-container { padding: 24px; background: #fef8e8; min-height: 100vh; }
+    .header { margin-bottom: 24px; }
+    .title { font-size: 28px; font-weight: 700; color: #1f2937; margin: 0 0 8px 0; }
+    .subtitle { font-size: 14px; color: #6b7280; margin: 0; }
+    
+    .selector-section { margin-bottom: 32px; }
+    .selector-section label { display: block; font-size: 11px; font-weight: 700; color: #6b7280; margin-bottom: 8px; text-transform: uppercase; }
+    .card-select { width: 100%; max-width: 500px; padding: 14px 16px; border: 2px solid rgba(168, 216, 234, 0.3); border-radius: 12px; font-size: 15px; font-weight: 600; background: white; color: #1f2937; transition: all 0.3s; cursor: pointer; }
+    .card-select:focus { outline: none; border-color: #ffc700; box-shadow: 0 0 0 3px rgba(255, 199, 0, 0.1); }
+    
+    .card-image-section { margin-bottom: 32px; display: flex; justify-content: center; }
+    .card-image-wrapper { text-align: center; }
+    .card-image-wrapper img { max-width: 300px; height: auto; border-radius: 16px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); border: 3px solid #ffc700; }
+    .card-name-label { margin-top: 12px; font-size: 16px; font-weight: 700; color: #1f2937; }
+    
+    .loading { display: flex; flex-direction: column; align-items: center; padding: 100px 20px; }
+    .spinner { width: 50px; height: 50px; border: 4px solid rgba(255, 193, 204, 0.3); border-top-color: #ffc700; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .kpis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .kpi-card { background: rgba(255, 255, 255, 0.8); border: 2px solid rgba(168, 216, 234, 0.3); border-radius: 12px; padding: 20px; transition: all 0.3s; }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+    .kpi-card.highlight { background: linear-gradient(135deg, #ffc700 0%, #ffb700 100%); border-color: #ffc700; }
+    .kpi-label { font-size: 10px; font-weight: 700; color: #6b7280; margin: 0 0 8px 0; text-transform: uppercase; }
+    .kpi-card.highlight .kpi-label { color: #1f2937; }
+    .kpi-value { font-size: 24px; font-weight: 700; color: #1f2937; margin: 0; }
+    .kpi-value.small { font-size: 18px; }
+    .kpi-value.positive { color: #22c55e; }
+    .kpi-value.negative { color: #ef4444; }
+    .kpi-sub { font-size: 11px; color: #6b7280; margin: 4px 0 0 0; }
+    .kpi-card.highlight .kpi-sub { color: #374151; }
+    
+    .charts-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+    .chart-card { background: rgba(255, 255, 255, 0.8); border: 2px solid rgba(168, 216, 234, 0.3); border-radius: 12px; padding: 20px; height: 350px; display: flex; flex-direction: column; }
+    .chart-card.large { grid-column: 1 / -1; }
+    .chart-card h3 { font-size: 16px; font-weight: 700; color: #1f2937; margin: 0 0 16px 0; flex-shrink: 0; }
+    .chart-card canvas { flex: 1; max-height: calc(100% - 40px); }
+    
+    .insights-section { background: rgba(255, 255, 255, 0.8); border: 2px solid rgba(168, 216, 234, 0.3); border-radius: 12px; padding: 24px; margin-bottom: 32px; }
+    .insights-section h3 { font-size: 18px; font-weight: 700; color: #1f2937; margin: 0 0 20px 0; }
+    .insights-grid { display: grid; gap: 12px; }
+    .insight-card { display: flex; align-items: flex-start; gap: 12px; padding: 16px; background: #fef8e8; border-radius: 8px; border-left: 4px solid #ffc700; }
+    .insight-icon { font-size: 24px; flex-shrink: 0; }
+    .insight-card p { margin: 0; font-size: 14px; color: #374151; line-height: 1.5; }
+    
+    .toggle-section { text-align: center; margin-bottom: 32px; }
+    .toggle-btn { background: linear-gradient(135deg, #ffc700 0%, #ffb700 100%); border: none; padding: 16px 32px; border-radius: 12px; font-size: 16px; font-weight: 700; color: #1f2937; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 12px rgba(255, 199, 0, 0.3); }
+    .toggle-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(255, 199, 0, 0.4); }
+    
+    .table-section { background: rgba(255, 255, 255, 0.8); border: 2px solid rgba(168, 216, 234, 0.3); border-radius: 12px; padding: 24px; }
+    .table-section h3 { font-size: 18px; font-weight: 700; color: #1f2937; margin: 0 0 20px 0; }
+    .table-wrapper { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { background: linear-gradient(135deg, #ffc700 0%, #ffb700 100%); }
+    th { padding: 12px; text-align: left; font-size: 11px; font-weight: 700; color: #1f2937; text-transform: uppercase; }
+    td { padding: 12px; border-top: 1px solid rgba(168, 216, 234, 0.2); color: #374151; }
+    td.card-name { font-weight: 600; color: #1f2937; }
+    td.price { font-weight: 700; color: #1f2937; font-size: 14px; }
+    td.qty { text-align: center; font-weight: 600; }
+    .badge { background: rgba(59, 130, 246, 0.15); color: #2563eb; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .source-badge { padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .source-badge.liga { background: rgba(139, 92, 246, 0.15); color: #7c3aed; }
+    .source-badge.myp { background: rgba(34, 197, 94, 0.15); color: #059669; }
+    td.seller { color: #6b7280; font-size: 12px; }
+    td.date { color: #9ca3af; font-size: 12px; }
+    .table-info { text-align: center; margin-top: 16px; color: #6b7280; font-size: 13px; }
+    
+    .empty-state { display: flex; flex-direction: column; align-items: center; padding: 100px 20px; text-align: center; }
+    .empty-state span { font-size: 64px; margin-bottom: 16px; }
+    .empty-state p { color: #6b7280; font-size: 16px; }
+    
+    .animate-fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    @media (max-width: 768px) {
+      .kpis-grid { grid-template-columns: repeat(2, 1fr); }
+      .charts-section { grid-template-columns: 1fr; }
+      .chart-card.large { grid-column: auto; }
+    }
+  `]
+})
+export class MarketAnalysisAdvancedComponent implements OnInit, AfterViewInit {
+  @ViewChild('priceChart') priceChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('volumeChart') volumeChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('heatmapChart') heatmapChartRef!: ElementRef<HTMLCanvasElement>;
+
+  loading = signal(true);
+  ligaOffers = signal<any[]>([]);
+  mypOffers = signal<any[]>([]);
+  availableCards = signal<string[]>([]);
+  selectedCardName = signal<string>('');
+  cardImage = signal<string>('');
+  showTable = signal(false);
+  errorMessage = signal<string>('');
+
+  // Auto-detected field names
+  private priceFieldName = '';
+  private cardNameField = '';
+  private dateField = '';
+
+  private charts: any[] = [];
+
+  // Normalized offers from both sources
+  normalizedOffers = computed(() => {
+    const liga = this.ligaOffers().map(o => this.normalizeOffer(o, 'liga'));
+    const myp = this.mypOffers().map(o => this.normalizeOffer(o, 'myp'));
+    const all = [...liga, ...myp].filter(o => o.price > 0); // Filter zero prices
+
+    // Filter by selected card if any
+    if (this.selectedCardName()) {
+      const search = this.selectedCardName().toLowerCase();
+      return all.filter(o => o.card_name.toLowerCase().includes(search));
+    }
+
+    return all;
+  });
+
+  // Computed: KPIs
+  kpis = computed(() => this.calculateKPIs());
+
+  // Computed: Insights
+  insights = computed(() => this.generateInsights());
+
+  async ngOnInit() {
+    await this.loadInitialData();
+  }
+
+  ngAfterViewInit() {
+    if (this.normalizedOffers().length > 0) {
+      setTimeout(() => this.renderCharts(), 100);
+    }
+  }
+
+  async loadInitialData() {
+    this.loading.set(true);
+    try {
+      // Load from both tables to get card names
+      const { data: ligaData } = await supabase
+        .from('cartas_precos_liga')
+        .select('*')
+        .limit(1000);
+
+      const { data: mypData } = await supabase
+        .from('myp_cards_meg')
+        .select('*')
+        .limit(1000);
+
+      this.ligaOffers.set(ligaData || []);
+      this.mypOffers.set(mypData || []);
+
+      // Auto-detect fields from first record
+      if (ligaData && ligaData.length > 0) {
+        this.detectFieldNames(ligaData[0]);
+      }
+
+      this.extractCardNames();
+    } catch (error) {
+      console.error('❌ Erro ao carregar dados:', error);
+      this.errorMessage.set('Erro ao carregar dados do Supabase');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  detectFieldNames(sample: any) {
+    console.log('🔍 AUTO-DETECTANDO CAMPOS...');
+    console.log('Campos disponíveis:', Object.keys(sample));
+    console.log('Exemplo de registro:', sample);
+
+    // Detect price field
+    if (sample.preco !== undefined) {
+      this.priceFieldName = 'preco';
+    } else if (sample.preco_min !== undefined) {
+      this.priceFieldName = 'preco_min';
+    } else if (sample.preco_atual !== undefined) {
+      this.priceFieldName = 'preco_atual';
+    } else if (sample.price !== undefined) {
+      this.priceFieldName = 'price';
+    } else if (sample.precounitario !== undefined) {
+      this.priceFieldName = 'precounitario';
+    } else if (sample.valor !== undefined) {
+      this.priceFieldName = 'valor';
+    }
+
+    // Detect card name field
+    if (sample.carta !== undefined) {
+      this.cardNameField = 'carta';
+    } else if (sample.nome !== undefined) {
+      this.cardNameField = 'nome';
+    } else if (sample.card_name !== undefined) {
+      this.cardNameField = 'card_name';
+    } else if (sample.slug !== undefined) {
+      this.cardNameField = 'slug';
+    }
+
+    // Detect date field
+    if (sample.data_coleta !== undefined) {
+      this.dateField = 'data_coleta';
+    } else if (sample.created_at !== undefined) {
+      this.dateField = 'created_at';
+    }
+
+    console.log(`✅ Campo de preço: "${this.priceFieldName}"`);
+    console.log(`✅ Campo de carta: "${this.cardNameField}"`);
+    console.log(`✅ Campo de data: "${this.dateField}"`);
+  }
+
+  setTimeout(() => this.renderCharts(), 100);
+    } catch (error) {
+  console.error('❌ Erro geral:', error);
+  this.errorMessage.set('Erro ao buscar ofertas');
+} finally {
+  this.loading.set(false);
+}
+  }
+
+extractCardNames() {
+  const names = new Set<string>();
+
+  this.ligaOffers().forEach(o => {
+    const name = o[this.cardNameField] || o.carta || o.nome;
+    if (name) names.add(name);
+  });
+
+  this.mypOffers().forEach(o => {
+    const name = o[this.cardNameField] || o.carta || o.nome;
+    if (name) names.add(name);
+  });
+
+  this.availableCards.set(Array.from(names).sort());
+  console.log(`📋 ${names.size} cartas únicas encontradas`);
+}
+
+normalizeOffer(offer: any, source: string): NormalizedOffer {
+  const price = Number(offer[this.priceFieldName] || offer.preco || offer.price || offer.precounitario || 0);
+
+  return {
+    card_name: offer[this.cardNameField] || offer.carta || offer.nome || 'Desconhecida',
+    price: price,
+    condition: offer.estado || offer.condicao || offer.condition || 'N/A',
+    language: offer.idioma || offer.language || 'N/A',
+    quantity: Number(offer.quantidade || offer.quantity || 1),
+    seller: offer.vendedor || offer.seller || (source === 'liga' ? 'Liga Pokémon' : 'MYP Cards'),
+    date: offer[this.dateField] || offer.data_coleta || offer.created_at || new Date().toISOString(),
+    source: source
+  };
+}
+
+calculateKPIs(): MarketKPIs {
+  const data = this.normalizedOffers();
+  if (data.length === 0) {
+    return {
+      minPrice: 0,
+      avg7d: 0,
+      avg30d: 0,
+      variation30d: 0,
+      liquidity: 'N/A',
+      topCondition: 'N/A',
+      topLanguage: 'N/A',
+      offersCount: 0
+    };
+  }
+
+  const minPrice = Math.min(...data.map(o => o.price));
+  const now = new Date();
+
+  const last7Days = data.filter(o => {
+    const diff = now.getTime() - new Date(o.date).getTime();
+    return diff <= 7 * 24 * 60 * 60 * 1000;
+  });
+
+  const last30Days = data.filter(o => {
+    const diff = now.getTime() - new Date(o.date).getTime();
+    return diff <= 30 * 24 * 60 * 60 * 1000;
+  });
+
+  const avg7d = last7Days.length > 0
+    ? last7Days.reduce((sum, o) => sum + o.price, 0) / last7Days.length
+    : 0;
+
+  const avg30d = last30Days.length > 0
+    ? last30Days.reduce((sum, o) => sum + o.price, 0) / last30Days.length
+    : 0;
+
+  const variation30d = avg30d > 0 ? ((minPrice - avg30d) / avg30d) * 100 : 0;
+
+  const offersPerWeek = (data.length / 30) * 7;
+  let liquidity = 'Baixa';
+  if (offersPerWeek > 20) liquidity = 'Alta';
+  else if (offersPerWeek > 10) liquidity = 'Média';
+
+  const conditions = data.map(o => o.condition);
+  const topCondition = this.getMostCommon(conditions) || 'N/A';
+
+  const languages = data.map(o => o.language);
+  const topLanguage = this.getMostCommon(languages) || 'N/A';
+
+  return {
+    minPrice,
+    avg7d,
+    avg30d,
+    variation30d,
+    liquidity,
+    topCondition,
+    topLanguage,
+    offersCount: data.length
+  };
+}
+
+generateInsights(): Array < { icon: string; text: string } > {
+  const insights: Array<{ icon: string; text: string }> =[];
+const kpis = this.kpis();
+const data = this.normalizedOffers();
+
+if (data.length === 0) return insights;
+
+if (kpis.minPrice < kpis.avg30d && kpis.avg30d > 0) {
+  const diff = ((kpis.avg30d - kpis.minPrice) / kpis.avg30d * 100).toFixed(1);
+  insights.push({
+    icon: '💰',
+    text: `Preço mínimo está ${diff}% abaixo da média dos últimos 30 dias. Bom momento para comprar!`
+  });
+}
+
+if (kpis.liquidity === 'Baixa') {
+  insights.push({
+    icon: '📉',
+    text: 'Liquidez baixa detectada. Carta pouco negociada no mercado.'
+  });
+} else if (kpis.liquidity === 'Alta') {
+  insights.push({
+    icon: '📈',
+    text: 'Alta liquidez! Carta muito negociada no mercado.'
+  });
+}
+
+insights.push({
+  icon: '🎯',
+  text: `${kpis.topCondition} concentra a maior parte das ofertas. Idioma dominante: ${kpis.topLanguage}.`
+});
+
+const ligaCount = data.filter(o => o.source === 'liga').length;
+const mypCount = data.filter(o => o.source === 'myp').length;
+const dominant = ligaCount > mypCount ? 'Liga Pokémon' : 'MYP Cards';
+insights.push({
+  icon: '🏪',
+  text: `${dominant} tem mais ofertas disponíveis (${ligaCount} Liga, ${mypCount} MYP).`
+});
+
+return insights.slice(0, 5);
+  }
+
+getMostCommon(arr: string[]): string | null {
+  if (arr.length === 0) return null;
+  const counts = arr.reduce((acc, val) => {
+    acc[val] = (acc[val] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  return Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+}
+
+renderCharts() {
+  if (!this.priceChartRef || !this.volumeChartRef || !this.heatmapChartRef) return;
+
+  this.charts.forEach(chart => chart.destroy());
+  this.charts = [];
+
+  const data = this.normalizedOffers();
+  if (data.length === 0) return;
+
+  this.renderPriceChart(data);
+  this.renderVolumeChart(data);
+  this.renderHeatmapChart(data);
+}
+
+renderPriceChart(data: NormalizedOffer[]) {
+  const ctx = this.priceChartRef.nativeElement.getContext('2d');
+  if (!ctx) return;
+
+  const byDate = new Map<string, number[]>();
+  data.forEach(o => {
+    const date = new Date(o.date).toLocaleDateString('pt-BR');
+    if (!byDate.has(date)) byDate.set(date, []);
+    byDate.get(date)!.push(o.price);
+  });
+
+  const dates = Array.from(byDate.keys())
+    .sort((a, b) => new Date(a.split('/').reverse().join('-')).getTime() - new Date(b.split('/').reverse().join('-')).getTime())
+    .slice(-30);
+  const minPrices = dates.map(date => Math.min(...byDate.get(date)!));
+
+  this.charts.push(new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: 'Preço Mínimo',
+        data: minPrices,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: 'rgba(0, 0, 0, 0.8)', padding: 12 }
+      },
+      scales: {
+        y: { beginAtZero: false, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0, 0, 0, 0.05)' } },
+        x: { ticks: { font: { size: 9 } }, grid: { display: false } }
+      }
+    }
+  }));
+}
+
+renderVolumeChart(data: NormalizedOffer[]) {
+  const ctx = this.volumeChartRef.nativeElement.getContext('2d');
+  if (!ctx) return;
+
+  const byDate = new Map<string, number>();
+  data.forEach(o => {
+    const date = new Date(o.date).toLocaleDateString('pt-BR');
+    byDate.set(date, (byDate.get(date) || 0) + 1);
+  });
+
+  const dates = Array.from(byDate.keys())
+    .sort((a, b) => new Date(a.split('/').reverse().join('-')).getTime() - new Date(b.split('/').reverse().join('-')).getTime())
+    .slice(-30);
+  const counts = dates.map(date => byDate.get(date)!);
+
+  this.charts.push(new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: 'Ofertas',
+        data: counts,
+        backgroundColor: 'rgba(16, 185, 129, 0.8)',
+        borderColor: 'rgba(16, 185, 129, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: 'rgba(0, 0, 0, 0.8)', padding: 12 }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } }, grid: { color: 'rgba(0, 0, 0, 0.05)' } },
+        x: { ticks: { font: { size: 9 } }, grid: { display: false } }
+      }
+    }
+  }));
+}
+
+renderHeatmapChart(data: NormalizedOffer[]) {
+  const ctx = this.heatmapChartRef.nativeElement.getContext('2d');
+  if (!ctx) return;
+
+  const segments = new Map<string, number[]>();
+  data.forEach(o => {
+    const key = `${o.language} ${o.condition}`;
+    if (!segments.has(key)) segments.set(key, []);
+    segments.get(key)!.push(o.price);
+  });
+
+  const labels = Array.from(segments.keys()).slice(0, 15);
+  const avgPrices = labels.map(key => {
+    const prices = segments.get(key)!;
+    return prices.reduce((a, b) => a + b, 0) / prices.length;
+  });
+
+  this.charts.push(new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Preço Médio',
+        data: avgPrices,
+        backgroundColor: avgPrices.map(p => {
+          const max = Math.max(...avgPrices);
+          const ratio = p / max;
+          return `rgba(59, 130, 246, ${0.3 + ratio * 0.7})`;
+        }),
+        borderColor: '#3b82f6',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: 'rgba(0, 0, 0, 0.8)', padding: 12 }
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(0, 0, 0, 0.05)' } },
+        y: { ticks: { font: { size: 9 } }, grid: { display: false } }
+      }
+    }
+  }));
+}
+}
