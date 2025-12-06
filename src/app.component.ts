@@ -160,16 +160,25 @@ export class AppComponent implements OnInit {
   }
 
   async ngOnInit() {
-    // Load metadata immediately (languages/conditions are now static, but we keep this for other potential needs or remove if strictly not needed. 
-    // User requested static lists, so I will remove dynamic loading for lang/cond to avoid overwriting).
-    // this.loadMetadata(); 
+    console.log('🚀 AppComponent initializing...');
+    try {
+      console.log('🔄 Checking Supabase session...');
+      const session = await this.supabaseService.getSession();
+      console.log('✅ Session result:', session);
 
-    const session = await this.supabaseService.getSession();
-    if (session) {
-      this.user.set(session.user);
-      await this.loadPortfolio();
+      if (session) {
+        console.log('👤 User found:', session.user.email);
+        this.user.set(session.user);
+        await this.loadPortfolio();
+      } else {
+        console.log('🤷 No session found. Should show login.');
+      }
+    } catch (err) {
+      console.error('❌ Error in ngOnInit:', err);
+    } finally {
+      this.loading.set(false);
+      console.log('🏁 Loading set to false. View should render.');
     }
-    this.loading.set(false);
   }
 
   async signOut() {

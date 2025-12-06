@@ -325,7 +325,37 @@
   <script type="importmap">
 
 <body class="bg-pokemon-cream font-sans">
+  <div id="debug-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 200px; overflow: auto; background: rgba(0,0,0,0.8); color: lime; font-family: monospace; z-index: 9999; padding: 10px; font-size: 12px; pointer-events: none;">
+    <strong>Debug Log:</strong><br>
+  </div>
+  <script>
+    (function() {
+      var logDiv = document.getElementById('debug-overlay');
+      function logToOverlay(msg, type) {
+        if (!logDiv) return;
+        var line = document.createElement('div');
+        line.style.color = type === 'error' ? 'red' : 'lime';
+        line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+        logDiv.appendChild(line);
+        logDiv.scrollTop = logDiv.scrollHeight;
+      }
+      var oldLog = console.log;
+      console.log = function() {
+        oldLog.apply(console, arguments);
+        logToOverlay(Array.from(arguments).join(' '), 'log');
+      };
+      var oldError = console.error;
+      console.error = function() {
+        oldError.apply(console, arguments);
+        logToOverlay(Array.from(arguments).join(' '), 'error');
+      };
+      window.onerror = function(msg, url, line) {
+        logToOverlay('Uncaught: ' + msg + ' @ ' + url + ':' + line, 'error');
+      };
+      console.log('Debug overlay initialized.');
+    })();
+  </script>
   <app-root></app-root>
-</body>
+  </body>
 
 </html>
