@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { supabase } from '../../supabaseClient';
 import { Chart } from 'chart.js/auto';
+import { MarketComparisonWrapperComponent } from '../market-comparison-wrapper/market-comparison-wrapper.component';
 
 // Interfaces
 interface CardMetadata {
@@ -51,7 +52,7 @@ function normalize(str: string | null | undefined): string {
 @Component({
   selector: 'app-market-analysis-advanced',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MarketComparisonWrapperComponent],
   template: `
     <div class="dashboard-container">
       <!-- Header / Search -->
@@ -212,6 +213,12 @@ function normalize(str: string | null | undefined): string {
             </div>
           </div>
 
+          <!-- Market Comparison: PriceCharting vs MYP -->
+          <app-market-comparison-wrapper 
+            [cardName]="selectedMetadata()?.name || ''"
+            [offers]="rawOffers()">
+          </app-market-comparison-wrapper>
+
           <!-- Detailed Offers Toggle -->
           <div class="details-section">
             <button class="btn-toggle" (click)="toggleDetails()">
@@ -231,7 +238,7 @@ function normalize(str: string | null | undefined): string {
                     </tr>
                   </thead>
                   <tbody>
-                    @for (offer of sortedOffers().slice(0, 50); track $index) {
+                    @for (offer of latestDateOffers().slice(0, 50); track $index) {
                       <tr>
                         <td>{{ offer.date | date:'dd/MM/yyyy' }}</td>
                         <td>{{ offer.seller || 'N/A' }}</td>
@@ -558,6 +565,20 @@ export class MarketAnalysisAdvancedComponent implements OnInit {
     return [...this.rawOffers()].sort((a, b) => b.date.getTime() - a.date.getTime());
   });
 
+  // Filter offers to show only latest date
+  latestDateOffers = computed(() => {
+    const sorted = this.sortedOffers();
+    if (sorted.length === 0) return [];
+
+    const latestDate = sorted[0].date;
+    const latestDateStr = latestDate.toISOString().split('T')[0];
+
+    return sorted.filter(offer => {
+      const offerDateStr = offer.date.toISOString().split('T')[0];
+      return offerDateStr === latestDateStr;
+    });
+  });
+
   kpis = computed(() => this.calculateKPIs(this.rawOffers()));
   dailyStats = computed(() => this.processDailyStats(this.rawOffers()));
   sellerFlow = computed(() => this.analyzeSellerFlow(this.rawOffers()));
@@ -588,8 +609,8 @@ export class MarketAnalysisAdvancedComponent implements OnInit {
     console.log('🔄 Carregando todas as cartas...');
     // Select 'carta' and 'url' to derive slug/name
     const { data, error } = await supabase
-      .from('myp_cards_meg')
-      .select('carta, url')
+      .from('card_images')
+      .select('carta, image_url')
       .order('carta', { ascending: true });
 
     if (error) {
@@ -638,7 +659,7 @@ export class MarketAnalysisAdvancedComponent implements OnInit {
   async fetchMetadata(slug: string) {
     // 1. Get basic info from myp_cards_meg
     const { data: cardData } = await supabase
-      .from('myp_cards_meg')
+      .from('card_images')
       .select('*')
       .eq('carta', slug)
       .limit(1)

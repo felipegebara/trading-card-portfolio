@@ -1,0 +1,104 @@
+<!-- sales-flow-card.component.html -->
+
+<div class="card" *ngIf="data; else loading">
+    <div class="card-header">
+        <span class="title">💰 Fluxo de Vendas (hoje)</span>
+        <span class="subtitle">Comparado a ontem</span>
+    </div>
+
+    <div class="card-body">
+        <!-- BLOCO PRINCIPAL -->
+        <div class="main-grid">
+            <!-- NÚMEROS GRANDES -->
+            <div class="kpis">
+                <div class="kpi">
+                    <span class="kpi-label">Vendas hoje</span>
+                    <span class="kpi-value">{{ data!.summary.totalSales | number:'1.0-0' }}</span>
+                </div>
+
+                <div class="kpi">
+                    <span class="kpi-label">Volume vendido</span>
+                    <span class="kpi-value">R$ {{ data!.summary.totalVolume | number:'1.2-2' }}</span>
+                </div>
+
+                <div class="kpi">
+                    <span class="kpi-label">Ticket médio</span>
+                    <span class="kpi-value">R$ {{ data!.summary.avgTicket | number:'1.2-2' }}</span>
+                </div>
+
+                <div class="kpi">
+                    <span class="kpi-label">Vendedores ativos</span>
+                    <span class="kpi-value">{{ data!.summary.activeSellers | number:'1.0-0' }}</span>
+                </div>
+            </div>
+
+            <!-- FLUXO DE VENDEDORES / VARIAÇÕES -->
+            <div class="flow">
+                <div class="flow-item">
+                    <span class="flow-label">Novos vendedores</span>
+                    <span class="flow-value positive">+{{ data!.summary.newSellers }}</span>
+                </div>
+
+                <div class="flow-item">
+                    <span class="flow-label">Vendedores retomando</span>
+                    <span class="flow-value">
+                        +{{ data!.summary.returningSellers }}
+                    </span>
+                </div>
+
+                <div class="flow-item">
+                    <span class="flow-label">Vendedores que saíram</span>
+                    <span class="flow-value negative">
+                        -{{ data!.summary.lostSellers }}
+                    </span>
+                </div>
+
+                <div class="flow-divider"></div>
+
+                <div class="flow-item">
+                    <span class="flow-label">Δ vendas vs ontem</span>
+                    <span class="flow-value" [class.positive]="isPositiveSalesDiff"
+                        [class.negative]="!isPositiveSalesDiff">
+                        {{ data!.summary.diffSalesPct / 100 | percent:'1.0-1' }}
+                    </span>
+                </div>
+
+                <div class="flow-item">
+                    <span class="flow-label">Δ volume vs ontem</span>
+                    <span class="flow-value" [class.positive]="isPositiveVolumeDiff"
+                        [class.negative]="!isPositiveVolumeDiff">
+                        {{ data!.summary.diffVolumePct / 100 | percent:'1.0-1' }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- MINI GRÁFICO: HISTÓRICO 7 DIAS -->
+        <div class="history">
+            <div class="history-header">
+                <span>Últimos 7 dias</span>
+            </div>
+
+            <div class="history-chart">
+                <div class="bar" *ngFor="let p of data!.history"
+                    [style.height.%]="(p.sales / (data!.history | maxSales)) * 100"
+                    [attr.title]="(p.date | date:'dd/MM') + ': ' + p.sales + ' vendas'">
+                    <span class="bar-label">{{ p.sales }}</span>
+                </div>
+            </div>
+
+            <div class="history-footer">
+                <span *ngFor="let p of data!.history" class="history-date">
+                    {{ p.date | date:'dd/MM' }}
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<ng-template #loading>
+    <div class="card loading">
+        <div class="spinner"></div>
+        <p>Carregando fluxo de vendas…</p>
+    </div>
+</ng-template>

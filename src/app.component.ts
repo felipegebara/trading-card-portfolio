@@ -13,6 +13,9 @@ import { supabase } from './supabaseClient';
 import { PortfolioPerformanceComponent } from './components/portfolio-performance/portfolio-performance.component';
 import { PortfolioConsolidatedComponent } from './components/portfolio-consolidated/portfolio-consolidated.component';
 import { PsaTabComponent } from './components/psa-tab/psa-tab.component';
+import { OpportunitiesTabComponent } from './components/opportunities-tab/opportunities-tab.component';
+import { SalesFlowCardComponent } from './components/sales-flow-card/sales-flow-card.component';
+import { SalesFlowData } from './models/sales-flow.model';
 
 export interface PortfolioItem {
   id: number;
@@ -31,7 +34,7 @@ export interface PortfolioItem {
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   standalone: true,
-  imports: [CommonModule, FormsModule, PortfolioChartComponent, MarketAnalysisAdvancedComponent, TransactionHistoryPageComponent, LoginComponent, AddPositionModalComponent, PortfolioPerformanceComponent, PortfolioConsolidatedComponent, PsaTabComponent, CurrencyPipe, DatePipe, DecimalPipe],
+  imports: [CommonModule, FormsModule, PortfolioChartComponent, MarketAnalysisAdvancedComponent, TransactionHistoryPageComponent, LoginComponent, AddPositionModalComponent, PortfolioPerformanceComponent, PortfolioConsolidatedComponent, PsaTabComponent, OpportunitiesTabComponent, SalesFlowCardComponent, CurrencyPipe, DatePipe, DecimalPipe],
 })
 export class AppComponent implements OnInit {
   // --- Auth State ---
@@ -39,7 +42,7 @@ export class AppComponent implements OnInit {
   loading = signal(true);
 
   // --- View State Signal ---
-  activeView = signal<'portfolio' | 'marketAdvanced' | 'transactionsNew' | 'psa'>('portfolio');
+  activeView = signal<'portfolio' | 'marketAdvanced' | 'transactionsNew' | 'psa' | 'opportunities'>('portfolio');
 
   // --- Portfolio Table Visibility ---
   showTableView = signal(false);
@@ -58,6 +61,30 @@ export class AppComponent implements OnInit {
   // --- Card Images Cache ---
   private cardImageCache = new Map<string, string>();
   private fetchingImages = new Set<string>();
+
+  // --- Mock Sales Flow Data ---
+  mockSalesData: SalesFlowData = {
+    summary: {
+      totalSales: 15,
+      totalVolume: 2450.00,
+      avgTicket: 163.33,
+      activeSellers: 8,
+      diffSalesPct: 25,      // +25%
+      diffVolumePct: 18.5,   // +18.5%
+      newSellers: 2,
+      returningSellers: 1,
+      lostSellers: 1
+    },
+    history: [
+      { date: '2025-12-02', sales: 8 },
+      { date: '2025-12-03', sales: 12 },
+      { date: '2025-12-04', sales: 10 },
+      { date: '2025-12-05', sales: 14 },
+      { date: '2025-12-06', sales: 11 },
+      { date: '2025-12-07', sales: 12 },
+      { date: '2025-12-08', sales: 15 }
+    ]
+  };
 
   // --- Computed Signals for KPIs ---
   totalInvested = computed(() =>
@@ -368,7 +395,7 @@ export class AppComponent implements OnInit {
   }
 
   // --- Methods ---
-  setView(view: 'portfolio' | 'marketAdvanced' | 'transactionsNew' | 'psa') {
+  setView(view: 'portfolio' | 'marketAdvanced' | 'transactionsNew' | 'psa' | 'opportunities') {
     this.activeView.set(view);
   }
 

@@ -8,19 +8,17 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 async function debugSchemas() {
-    console.log('--- Inspecting card_images ---');
-    const { data: images, error: imagesError } = await supabase
-        .from('card_images')
+    console.log('--- Inspecting pricecharting_overview columns ---');
+    const { data, error } = await supabase
+        .from('pricecharting_overview')
         .select('*')
         .limit(1);
 
-    if (imagesError) {
-        console.error('Error fetching card_images:', imagesError);
-    } else if (images && images.length) {
-        console.log('Columns:', Object.keys(images[0]));
-        console.log('Sample:', images[0]);
-    } else {
-        console.log('card_images table is empty or does not exist.');
+    if (error) {
+        console.error('Error:', error);
+    } else if (data && data.length) {
+        console.log('Columns:', Object.keys(data[0]));
+        console.log('Sample:', data[0]);
     }
 }
 
